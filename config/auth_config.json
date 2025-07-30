@@ -1,0 +1,16 @@
+{
+  "bearer": {
+    "login_url": "http://216.155.135.244:8888/yixun-decoration/auth/admin/sms/login",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "data": {
+      "code": "123456",
+      "phone": "13800138000"
+    },
+    "token_path": "data.token",
+    "use_prefix": false,
+    "token": "693f4480de9e452c82ede14b529e10a6"
+  }
+}

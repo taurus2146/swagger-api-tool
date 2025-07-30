@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景圆形 -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2196F3;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1976D2;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  
+  <!-- 主背景圆 -->
+  <circle cx="128" cy="128" r="120" fill="url(#bgGradient)" filter="url(#shadow)"/>
+  
+  <!-- API 符号设计 -->
+  <!-- 左花括号 -->
+  <path d="M 70 80 Q 50 80 50 100 L 50 110 Q 50 128 35 128 Q 50 128 50 146 L 50 156 Q 50 176 70 176" 
+        stroke="white" stroke-width="8" fill="none" stroke-linecap="round"/>
+  
+  <!-- 右花括号 -->
+  <path d="M 186 80 Q 206 80 206 100 L 206 110 Q 206 128 221 128 Q 206 128 206 146 L 206 156 Q 206 176 186 176" 
+        stroke="white" stroke-width="8" fill="none" stroke-linecap="round"/>
+  
+  <!-- 中间的API文字 -->
+  <text x="128" y="135" font-family="Arial, sans-serif" font-size="36" font-weight="bold" 
+        text-anchor="middle" fill="white">API</text>
+  
+  <!-- 底部的测试图标 -->
+  <g transform="translate(128, 190)">
+    <!-- 检查标记 -->
+    <circle cx="0" cy="0" r="18" fill="white" opacity="0.9"/>
+    <path d="M -8 0 L -3 5 L 8 -6" stroke="#2196F3" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- 装饰性的连接点 -->
+  <circle cx="80" cy="60" r="4" fill="white" opacity="0.6"/>
+  <circle cx="176" cy="60" r="4" fill="white" opacity="0.6"/>
+  <circle cx="80" cy="196" r="4" fill="white" opacity="0.6"/>
+  <circle cx="176" cy="196" r="4" fill="white" opacity="0.6"/>
+</svg>
