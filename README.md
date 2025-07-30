@@ -46,8 +46,7 @@
 │   ├── auth_config_dialog.py # 认证配置对话框
 │   ├── theme_manager.py   # 主题管理器
 │   └── styles.py          # 样式定义
-├── models/                # 数据模型
-├── tests/                 # 测试文件
+├── pic/                # gui界面
 ├── utils/                 # 工具模块
 ├── main.py               # 程序入口
 └── requirements.txt      # 依赖列表
