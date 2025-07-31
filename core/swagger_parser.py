@@ -50,9 +50,19 @@ class SwaggerParser:
                     logger.error(f"解析YAML格式失败: {e}")
                     return False
             
-            # 设置基本URL
+            # 设置基本URL - 从URL中提取，但移除swagger.json等文档文件名
             parsed_url = urlparse(url)
-            self.base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            # 如果URL路径以swagger文档文件结尾，则移除文件名部分
+            path = parsed_url.path
+            if path.endswith(('.json', '.yaml', '.yml')):
+                # 移除文件名，保留路径
+                path = '/'.join(path.split('/')[:-1])
+            # 确保路径以/结尾
+            if path and not path.endswith('/'):
+                path += '/'
+            elif not path:
+                path = '/'
+            self.base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{path}"
             
             # 创建数据生成器并设置Swagger数据
             from core.data_generator import DataGenerator
@@ -127,16 +137,30 @@ class SwaggerParser:
         # 确定Swagger版本
         swagger_version = self.swagger_data.get('swagger', self.swagger_data.get('openapi', ''))
         
-        # 基础URL获取
-        if 'host' in self.swagger_data and not self.base_url:
+        # 基础URL获取 - 优先使用Swagger文档中定义的URL
+        swagger_base_url = None
+        
+        # Swagger 2.0 格式
+        if 'host' in self.swagger_data:
             scheme = self.swagger_data.get('schemes', ['http'])[0]
             host = self.swagger_data.get('host', '')
-            basePath = self.swagger_data.get('basePath', '/')
-            self.base_url = f"{scheme}://{host}{basePath}"
-        elif 'servers' in self.swagger_data and not self.base_url:
-            # OpenAPI 3.0
+            basePath = self.swagger_data.get('basePath', '')
+            if not basePath.startswith('/'):
+                basePath = '/' + basePath
+            if not basePath.endswith('/') and basePath != '/':
+                basePath += '/'
+            swagger_base_url = f"{scheme}://{host}{basePath}"
+        # OpenAPI 3.0 格式
+        elif 'servers' in self.swagger_data:
             if self.swagger_data['servers'] and 'url' in self.swagger_data['servers'][0]:
-                self.base_url = self.swagger_data['servers'][0]['url']
+                swagger_base_url = self.swagger_data['servers'][0]['url']
+                # 确保以/结尾
+                if not swagger_base_url.endswith('/'):
+                    swagger_base_url += '/'
+        
+        # 如果文档中有定义基础URL，使用文档中的，否则使用从TRL推导的
+        if swagger_base_url:
+            self.base_url = swagger_base_url
         
         # 解析路径和操作
         paths = self.swagger_data.get('paths', {})
@@ -159,8 +183,6 @@ class SwaggerParser:
                     self.api_list.append(api_info)
 
     def _parse_parameters(self, operation, swagger_version):
-        """解析API参数"""
-        print(f"正在解析参数，操作: {operation.get('operationId', '未知操作')}")
         """
         解析API参数
         

@@ -1,0 +1,16 @@
+{
+  "id": "f9c42a6f-3ccc-47eb-a8fc-5a254a4f5660",
+  "name": "广西项目-pc端",
+  "description": "广西项目-pc端",
+  "swagger_source": {
+    "type": "url",
+    "location": "http://localhost:8082/pc/v2/api-docs?group=%E5%90%8E%E5%8F%B0%E7%94%A8%E6%88%B7"
+  },
+  "base_url": "http://localhost:8082",
+  "auth_config": {},
+  "created_at": "2025-07-30T17:32:24.238647",
+  "last_accessed": "2025-07-31T10:15:42.658162",
+  "api_count": 61,
+  "ui_state": {},
+  "tags": []
+}

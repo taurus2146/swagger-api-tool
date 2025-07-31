@@ -93,6 +93,15 @@ QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
     outline: none;
 }
 
+/* QTextEdit 特殊样式 - 确保文本不会超出边界 */
+QTextEdit {
+    font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
 /* 下拉框样式 */
 QComboBox {
     background-color: white;

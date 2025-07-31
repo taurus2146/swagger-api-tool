@@ -337,7 +337,7 @@ class AuthConfigDialog(QDialog):
                 api = current_item.data(Qt.UserRole)
                 # 设置登录URL
                 base_url = self.parent().swagger_parser.get_base_url() if hasattr(self.parent(), 'swagger_parser') else ''
-                full_url = base_url + api.get('path', '')
+                full_url = self.parent().api_tester._build_full_url(base_url, api.get('path', ''))
                 self.login_url_input.setText(full_url)
                 
                 # 设置请求方法

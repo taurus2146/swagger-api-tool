@@ -43,6 +43,64 @@ class ApiTester:
             base_url (str): API的基础URL
         """
         self.base_url = base_url
+    
+    def _build_full_url(self, base_url, path):
+        """
+        智能构建完整URL，避免路径重复
+        
+        Args:
+            base_url (str): 基础URL
+            path (str): API路径
+            
+        Returns:
+            str: 完整的URL
+        """
+        if not base_url or not path:
+            return base_url + path if base_url else path
+        
+        # 规范化URL
+        base_url = base_url.rstrip('/')
+        path = path.lstrip('/') if path.startswith('/') else path
+        
+        logger.debug(f"规范化后: base_url='{base_url}', path='{path}'")
+        
+        # 检查是否存在路径重复
+        # 例如：base_url = "http://localhost:8081/customer" 和 path = "customer/work-register/export/detail/92"
+        
+        # 提取base_url中的路径部分
+        from urllib.parse import urlparse
+        parsed_base = urlparse(base_url)
+        base_path_parts = [p for p in parsed_base.path.split('/') if p]  # 移除空字符串
+        path_parts = [p for p in path.split('/') if p]  # 移除空字符串
+        
+        logger.debug(f"base_path_parts: {base_path_parts}, path_parts: {path_parts}")
+        
+        # 检查path是否以base_url中的路径部分开头
+        if base_path_parts and path_parts:
+            # 找到重复的部分
+            common_start = 0
+            min_len = min(len(base_path_parts), len(path_parts))
+            
+            for i in range(min_len):
+                if base_path_parts[i] == path_parts[i]:
+                    common_start = i + 1
+                else:
+                    break
+            
+            if common_start > 0:
+                # 移除重复的部分
+                path_parts = path_parts[common_start:]
+                path = '/'.join(path_parts)
+                logger.debug(f"检测到路径重复，移除{common_start}个重复段，新path: '{path}'")
+        
+        # 拼接URL
+        if path:
+            full_url = f"{base_url}/{path}"
+        else:
+            full_url = base_url
+        
+        logger.debug(f"最终URL: '{full_url}'")
+        return full_url
         
     def test_api(self, api_info, custom_data=None, use_auth=True, auth_type="bearer"):
         """
@@ -77,7 +135,11 @@ class ApiTester:
         try:
             # 构建请求URL
             path = api_info.get('path', '')
-            full_url = urljoin(self.base_url, path)
+            
+            # 智能URL拼接，避免路径重复
+            full_url = self._build_full_url(self.base_url, path)
+            
+            logger.debug(f"URL拼接: base_url='{self.base_url}', path='{path}', full_url='{full_url}'")
             
             # 获取请求方法
             method = api_info.get('method', 'GET').upper()
@@ -312,6 +374,22 @@ class ApiTester:
             
         method = request.get('method', 'GET')
         url = request.get('url', '')
+        
+        # 如果有API信息，尝试重新构建URL以避免路径重复
+        api_info = test_result.get('api', {})
+        if api_info and 'path' in api_info and self.base_url:
+            # 获取原始路径
+            original_path = api_info['path']
+            
+            # 替换路径参数
+            path_params = test_result.get('path_params', {})
+            for param_name, param_value in path_params.items():
+                original_path = original_path.replace(f"{{{param_name}}}", str(param_value))
+            
+            # 重新构建URL
+            url = self._build_full_url(self.base_url, original_path)
+            logger.debug(f"重新构建URL: base_url='{self.base_url}', path='{original_path}', new_url='{url}'")
+        
         headers = request.get('headers', {}).copy()  # 复制以避免修改原始数据
         params = request.get('params', {})
         data = request.get('data')

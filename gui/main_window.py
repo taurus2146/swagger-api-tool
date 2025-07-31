@@ -16,11 +16,15 @@ from PyQt5.QtGui import QCursor
 from core.swagger_parser import SwaggerParser
 from core.auth_manager import AuthManager
 from core.api_tester import ApiTester
+from core.project_manager import ProjectManager
+from core.project_models import SwaggerSource, Project
 
 from .api_list_widget import ApiListWidget
 from .api_param_editor import ApiParamEditor
 from .test_result_widget import TestResultWidget
 from .auth_config_dialog_login import AuthConfigDialog
+from .project_selector_dialog import ProjectSelectorDialog
+from .project_edit_dialog import ProjectEditDialog
 from .styles import get_stylesheet
 from .api_test_thread import ApiTestThread
 from .icon_generator import get_app_icon
@@ -45,6 +49,7 @@ class MainWindow(QMainWindow):
         self.swagger_parser = SwaggerParser()
         self.auth_manager = AuthManager()
         self.api_tester = ApiTester(auth_manager=self.auth_manager)
+        self.project_manager = ProjectManager()
         
         # 确保数据生成器可以访问Swagger数据
         self.param_editor = None  # 将在_build_ui中初始化
@@ -57,6 +62,9 @@ class MainWindow(QMainWindow):
         
         # 应用主题样式
         self._apply_theme()
+        
+        # 自动加载上次的项目状态
+        self._restore_last_project_state()
 
     # ------------------------- UI 构建 ------------------------- #
     def _build_ui(self):
@@ -66,16 +74,35 @@ class MainWindow(QMainWindow):
 
         # 顶部栏
         top_layout = QHBoxLayout()
+        
+        # 项目管理区域
+        project_layout = QHBoxLayout()
+        
+        # 当前项目显示
+        self.current_project_label = QLabel("无项目")
+        self.current_project_label.setStyleSheet("font-weight: bold; color: #2196F3; padding: 5px;")
+        project_layout.addWidget(QLabel("当前项目:"))
+        project_layout.addWidget(self.current_project_label)
+        
+        # 项目管理按钮
+        self.project_menu_btn = QPushButton("项目管理 ▼")
+        self.project_menu_btn.clicked.connect(self._show_project_selector)
+        project_layout.addWidget(self.project_menu_btn)
+        
+        top_layout.addLayout(project_layout)
+        top_layout.addWidget(QLabel("|"))  # 分隔符
+        
+        # Swagger文档加载区域
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("输入Swagger文档URL …")
         top_layout.addWidget(self.url_input)
 
         btn_load_url = QPushButton("加载URL")
-        btn_load_url.clicked.connect(self._load_from_url)
+        btn_load_url.clicked.connect(lambda: self._load_from_url())
         top_layout.addWidget(btn_load_url)
 
         btn_load_file = QPushButton("加载文件")
-        btn_load_file.clicked.connect(self._load_from_file)
+        btn_load_file.clicked.connect(lambda: self._load_from_file())
         top_layout.addWidget(btn_load_file)
 
         btn_auth = QPushButton("认证配置")
@@ -133,11 +160,21 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("文件")
-        file_menu.addAction("从URL加载", self._load_from_url)
-        file_menu.addAction("从文件加载", self._load_from_file)
+        file_menu.addAction("从URL加载", lambda: self._load_from_url())
+        file_menu.addAction("从文件加载", lambda: self._load_from_file())
         file_menu.addSeparator()
         file_menu.addAction("退出", self.close)
 
+        # 项目菜单
+        project_menu = menu_bar.addMenu("项目")
+        project_menu.addAction("项目管理", self._show_project_selector)
+        project_menu.addAction("保存当前为项目", self._save_current_as_project)
+        project_menu.addSeparator()
+        
+        # 最近使用项目子菜单
+        self.recent_projects_menu = project_menu.addMenu("最近使用")
+        self._update_recent_projects_menu()
+        
         tools_menu = menu_bar.addMenu("工具")
         tools_menu.addAction("认证配置", self._show_auth_dialog)
         tools_menu.addAction("清空历史", self.result_widget.clear_history)
@@ -149,41 +186,64 @@ class MainWindow(QMainWindow):
         self._build_theme_menu(theme_menu)
 
     # ------------------------- Swagger 加载 ------------------------- #
-    def _load_from_url(self):
-        url = self.url_input.text().strip()
+    def _load_from_url(self, url=None):
+        if url is None:
+            url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "提示", "请输入URL")
             return
         self.status_label.setText("正在加载 URL …")
         QApplication.processEvents()
         if self.swagger_parser.load_from_url(url):
-            self._after_doc_loaded()
+            self._after_doc_loaded(source_type="url", location=url)
         else:
             QMessageBox.warning(self, "错误", "加载失败，请检查网址或网络")
         self.status_label.setText("就绪")
 
-    def _load_from_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择Swagger文档", "", "Swagger 文件 (*.json *.yaml *.yml)")
+    def _load_from_file(self, file_path=None):
+        if file_path is None:
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择Swagger文档", "", "Swagger 文件 (*.json *.yaml *.yml)")
         if not file_path:
             return
         self.status_label.setText("正在加载文件 …")
         QApplication.processEvents()
         if self.swagger_parser.load_from_file(file_path):
-            self._after_doc_loaded()
+            self._after_doc_loaded(source_type="file", location=file_path)
         else:
             QMessageBox.warning(self, "错误", "文件格式不正确或无法读取")
         self.status_label.setText("就绪")
 
-    def _after_doc_loaded(self):
+    def _after_doc_loaded(self, source_type: str, location: str):
         apis = self.swagger_parser.get_api_list()
         self.api_list_widget.set_api_list(apis)
         self.api_tester.set_base_url(self.swagger_parser.get_base_url())
         
-        # 将公共前缀传递给参数编辑器
         if hasattr(self.api_list_widget, 'common_prefix'):
             self.param_editor.set_common_prefix(self.api_list_widget.common_prefix)
         
         self.status_label.setText(f"已加载 {len(apis)} 个接口")
+        
+        # 检查是否需要提示保存为项目
+        current_project = self.project_manager.get_current_project()
+        should_prompt_save = False
+        
+        if not current_project:
+            # 没有当前项目，提示保存
+            should_prompt_save = True
+        else:
+            # 有当前项目，检查加载的源是否与当前项目匹配
+            if (current_project.swagger_source.type != source_type or 
+                current_project.swagger_source.location != location):
+                # 加载的源与当前项目不匹配，提示保存为新项目
+                should_prompt_save = True
+            else:
+                # 匹配当前项目，更新API数量
+                current_project.api_count = len(apis)
+                self.project_manager.update_project(current_project)
+        
+        # 提示保存为项目
+        if should_prompt_save:
+            self._prompt_save_as_project(source_type, location)
 
     # ------------------------- API选择处理 ------------------------- #
     def _on_api_selected(self, api_info):
@@ -290,7 +350,113 @@ class MainWindow(QMainWindow):
             auth_type = test_result.get('auth_type', "bearer")
             self._run_test(api_info, custom_data, use_auth, auth_type)
 
-    # ------------------------- 导出 ------------------------- #
+    # ------------------------- 项目管理 ------------------------- #
+    def _show_project_selector(self):
+        """显示项目选择器"""
+        dialog = ProjectSelectorDialog(self.project_manager, self)
+        dialog.project_selected.connect(self._load_project)
+        dialog.exec_()
+
+    def _load_project(self, project_id: str):
+        """加载项目"""
+        project = self.project_manager.set_current_project(project_id)
+        if project:
+            self.current_project_label.setText(project.name)
+            self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
+            
+            # 更新URL输入框为Swagger文档地址
+            if project.swagger_source.type == "url":
+                # 如果是URL来源，显示Swagger文档URL
+                self.url_input.setText(project.swagger_source.location)
+            else:
+                # 文件来源，清空URL输入框
+                self.url_input.clear()
+            
+            # 加载Swagger文档
+            if project.swagger_source.type == "url":
+                self._load_from_url(project.swagger_source.location)
+            else:
+                self._load_from_file(project.swagger_source.location)
+            
+            # 恢复认证配置
+            if project.auth_config:
+                self.auth_manager.set_config(project.auth_config)
+                
+            self._update_recent_projects_menu()
+
+    def _save_current_as_project(self):
+        """将当前配置保存为项目"""
+        # 实现保存当前配置为项目的逻辑
+        pass
+    
+    def _prompt_save_as_project(self, source_type: str, location: str):
+        """提示用户保存为项目"""
+        reply = QMessageBox.question(self, "保存项目", "是否要将当前配置保存为一个新项目？",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply == QMessageBox.Yes:
+            # 自动带入 SwaggerSource 和 baseUrl
+            swagger_source = SwaggerSource(type=source_type, location=location)
+            base_url = self.swagger_parser.get_base_url() or ""
+            
+            # 从location中提取一个建议的项目名称
+            suggested_name = ""
+            if source_type == "url":
+                # 从URL中提取域名作为建议名称
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(location)
+                    suggested_name = parsed.netloc or "API项目"
+                except:
+                    suggested_name = "API项目"
+            else:
+                # 从文件路径中提取文件名（不含扩展名）作为建议名称
+                import os
+                suggested_name = os.path.splitext(os.path.basename(location))[0] or "API项目"
+            
+            # 创建预填充的项目对象
+            project = Project.create_new(
+                name=suggested_name,
+                description=f"从 {location} 导入的API项目",
+                swagger_source=swagger_source,
+                base_url=base_url
+            )
+            
+            dialog = ProjectEditDialog(project=project, parent=self)
+            dialog.project_saved.connect(self._on_project_saved)
+            dialog.exec_()
+
+    def _on_project_saved(self, project):
+        """项目保存后的处理"""
+        # 先将项目添加到项目管理器的内存中（新项目或更新现有项目）
+        self.project_manager.projects[project.id] = project
+        # 然后保存到磁盘
+        self.project_manager.storage.save_project(project)
+        
+        self.current_project_label.setText(project.name)
+        self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
+        self.project_manager.set_current_project(project.id)
+        self._update_recent_projects_menu()
+        
+    def _show_project_menu(self):
+        """显示项目管理菜单"""
+        menu = QMenu(self)
+        menu.addAction("项目管理...", self._show_project_selector)
+        menu.addAction("保存当前为项目", self._save_current_as_project)
+        menu.addSeparator()
+        self._update_recent_projects_menu(menu)
+        menu.exec_(QCursor.pos())
+
+    def _update_recent_projects_menu(self, menu=None):
+        """更新最近使用项目菜单"""
+        if menu is None:
+            menu = self.recent_projects_menu
+            
+        menu.clear()
+        recent_projects = self.project_manager.get_recent_projects()
+        for project in recent_projects:
+            action = QAction(project.name, self)
+            action.triggered.connect(lambda checked, pid=project.id: self._load_project(pid))
+            menu.addAction(action)
     def _export_curl(self, result, button=None):
         try:
             curl = self.api_tester.generate_curl_command(result)
@@ -392,12 +558,61 @@ class MainWindow(QMainWindow):
         split = s.value("splitter")
         if split:
             self.splitter.restoreState(split)
+    
+    def _restore_last_project_state(self):
+        """恢复上次的项目状态"""
+        s = QSettings("swagger-api-tool", "app")
+        last_project_id = s.value("last_project_id", "")
+        
+        if last_project_id:
+            logger.info(f"尝试恢复上次的项目: {last_project_id}")
+            # 使用项目管理器加载当前项目
+            if self.project_manager.set_current_project(last_project_id):
+                project = self.project_manager.get_current_project()
+                if project:
+                    logger.info(f"成功恢复项目: {project.name}")
+                    self.current_project_label.setText(project.name)
+                    self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
+                    
+                    try:
+                        # 加载对应的Swagger文档
+                        if project.swagger_source.type == "url":
+                            self._load_from_url(project.swagger_source.location)
+                        else:
+                            self._load_from_file(project.swagger_source.location)
+                        
+                        # 加载认证信息
+                        if project.auth_config:
+                            self.auth_manager.set_config(project.auth_config)
+                        
+                        # 更新最近使用项目菜单
+                        self._update_recent_projects_menu()
+                        
+                        self.status_label.setText(f"已自动加载项目: {project.name}")
+                        
+                    except Exception as e:
+                        logger.error(f"恢复项目时出错: {e}", exc_info=True)
+                        self.status_label.setText(f"项目恢复失败: {str(e)}")
+                else:
+                    logger.warning(f"项目ID {last_project_id} 对应的项目不存在")
+            else:
+                logger.warning(f"无法设置项目ID {last_project_id} 为当前项目")
 
     def closeEvent(self, event):
         s = QSettings("swagger-api-tool", "app")
         s.setValue("last_url", self.url_input.text())
         s.setValue("geometry", self.saveGeometry())
         s.setValue("splitter", self.splitter.saveState())
+        
+        # 保存当前项目ID
+        current_project = self.project_manager.get_current_project()
+        if current_project:
+            s.setValue("last_project_id", current_project.id)
+            logger.info(f"保存最后使用的项目ID: {current_project.id}")
+        else:
+            s.setValue("last_project_id", "")
+            logger.info("清空最后使用的项目ID")
+        
         super().closeEvent(event)
     
     def _show_button_feedback(self, button, temp_text, original_text):
@@ -459,11 +674,26 @@ class MainWindow(QMainWindow):
         try:
             stylesheet = theme_manager.get_stylesheet()
             self.setStyleSheet(stylesheet)
+            self._update_title_bar_color()
             logger.info(f"已应用主题: {theme_manager.get_current_theme_name()}")
         except Exception as e:
             logger.error(f"应用主题时出错: {e}", exc_info=True)
             # 如果主题应用失败，回退到默认样式
             self.setStyleSheet(get_stylesheet())
+
+    def _update_title_bar_color(self):
+        """更新标题栏颜色（仅在 Windows 10/11 有效）"""
+        try:
+            import ctypes
+            color = theme_manager.get_title_bar_color()
+            # Convert color to RGB int
+            color_int = int(color.lstrip('#'), 16)
+            # Set the color for Windows title bar (only works on Windows 10/11)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                int(self.winId()), 35, ctypes.byref(ctypes.c_int(color_int)), ctypes.sizeof(ctypes.c_int)
+            )
+        except Exception as e:
+            logger.error(f"无法设置标题栏颜色: {e}", exc_info=True)
     
     def _show_theme_preview(self):
         """显示主题预览对话框"""

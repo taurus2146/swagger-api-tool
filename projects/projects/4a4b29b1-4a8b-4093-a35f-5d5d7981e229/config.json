@@ -1,0 +1,16 @@
+{
+  "id": "4a4b29b1-4a8b-4093-a35f-5d5d7981e229",
+  "name": "广西项目-客户端",
+  "description": "广西项目-客户端",
+  "swagger_source": {
+    "type": "url",
+    "location": "http://localhost:8081/customer/v2/api-docs?group=平台用户"
+  },
+  "base_url": "http://localhost:8081/customer/",
+  "auth_config": {},
+  "created_at": "2025-07-31T08:56:35.551661",
+  "last_accessed": "2025-07-31T10:15:27.514005",
+  "api_count": 80,
+  "ui_state": {},
+  "tags": []
+}
