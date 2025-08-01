@@ -15,7 +15,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -23,7 +23,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller pillow
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
         
     - name: Test build
       run: |
@@ -36,7 +40,7 @@ jobs:
         dir dist/SwaggerAPITester/
         
     - name: Upload test artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-build-windows
         path: dist/SwaggerAPITester/

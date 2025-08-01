@@ -15,7 +15,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -23,11 +23,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller pillow
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
         
     - name: Build executable
       run: |
-        pyinstaller build.spec
+        pyinstaller build.spec --clean
         
     - name: Create release archive
       run: |
@@ -35,20 +39,18 @@ jobs:
         7z a -tzip SwaggerAPITester-windows.zip SwaggerAPITester/
         
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SwaggerAPITester-windows
         path: dist/SwaggerAPITester-windows.zip
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: dist/SwaggerAPITester-windows.zip
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux:
     runs-on: ubuntu-latest
@@ -58,7 +60,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -71,11 +73,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller pillow
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
         
     - name: Build executable
       run: |
-        pyinstaller build.spec
+        pyinstaller build.spec --clean
         
     - name: Create release archive
       run: |
@@ -83,17 +89,15 @@ jobs:
         tar -czf SwaggerAPITester-linux.tar.gz SwaggerAPITester/
         
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SwaggerAPITester-linux
         path: dist/SwaggerAPITester-linux.tar.gz
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: dist/SwaggerAPITester-linux.tar.gz
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
