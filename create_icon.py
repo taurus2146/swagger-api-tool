@@ -9,6 +9,12 @@
 import os
 import sys
 
+# 设置输出编码，避免Windows下的Unicode错误
+if sys.platform.startswith('win'):
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach())
+
 def create_icon():
     """创建ICO图标文件"""
     png_path = "assets/app_icon.png"
@@ -16,8 +22,8 @@ def create_icon():
     
     # 检查PNG文件是否存在
     if not os.path.exists(png_path):
-        print(f"⚠️  PNG图标文件不存在: {png_path}")
-        print("将跳过图标创建，使用默认图标")
+        print(f"WARNING: PNG icon file not found: {png_path}")
+        print("Skipping icon creation, will use default icon")
         return True  # 不阻止构建过程
     
     try:
@@ -40,15 +46,15 @@ def create_icon():
         
         # 保存为ICO文件
         icons[0].save(ico_path, format='ICO', sizes=[icon.size for icon in icons])
-        print(f"✅ 图标创建成功: {ico_path}")
+        print(f"SUCCESS: Icon created successfully: {ico_path}")
         return True
         
     except ImportError:
-        print("⚠️  Pillow库未安装，跳过图标创建")
+        print("WARNING: Pillow library not installed, skipping icon creation")
         return True  # 不阻止构建过程
     except Exception as e:
-        print(f"⚠️  创建图标失败: {e}")
-        print("将跳过图标创建，使用默认图标")
+        print(f"WARNING: Failed to create icon: {e}")
+        print("Skipping icon creation, will use default icon")
         return True  # 不阻止构建过程
 
 def create_default_icon():
@@ -103,19 +109,28 @@ def create_default_icon():
         # 保存为ICO文件
         os.makedirs("assets", exist_ok=True)
         icons[0].save(ico_path, format='ICO', sizes=[icon.size for icon in icons])
-        print(f"✅ 默认图标创建成功: {ico_path}")
+        print(f"SUCCESS: Default icon created successfully: {ico_path}")
         return True
         
     except Exception as e:
-        print(f"⚠️  创建默认图标失败: {e}")
+        print(f"WARNING: Failed to create default icon: {e}")
         return False
 
-if __name__ == "__main__":
+def main():
+    """主函数"""
+    print("Icon Creation Script")
+    print("=" * 30)
+    
     # 首先尝试使用现有的PNG图标
     success = create_icon()
     
     # 如果没有PNG图标或创建失败，创建默认图标
     if success and not os.path.exists("assets/icon.ico"):
+        print("Creating default icon...")
         create_default_icon()
     
-    print("图标处理完成")
+    print("Icon processing completed")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

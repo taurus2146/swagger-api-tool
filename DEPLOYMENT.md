@@ -49,18 +49,11 @@ pip install pyinstaller pillow
 ### 2. 本地测试构建
 
 ```bash
-# 一键构建（推荐）
-python build_local.py
-
-# 或者分步执行：
-# 1. 生成图标文件
+# 生成图标文件
 python create_icon.py
 
-# 2. 手动构建
+# 手动构建
 pyinstaller build.spec --clean
-
-# 3. 测试构建结果
-python test_build.py
 ```
 
 ### 3. 测试可执行文件
@@ -143,7 +136,7 @@ git push origin v1.0.0
 1. **检查依赖**：确保 requirements.txt 包含所有必要依赖
 2. **检查路径**：确保所有文件路径在 build.spec 中正确配置
 3. **查看日志**：在 GitHub Actions 页面查看详细构建日志
-4. **本地测试**：使用 `python build_local.py` 在本地测试构建
+4. **本地测试**：使用 `pyinstaller build.spec --clean` 在本地测试构建
 5. **图标问题**：如果图标创建失败，会自动使用默认图标
 
 ### 可执行文件问题

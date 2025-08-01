@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main, master, develop ]
 
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONLEGACYWINDOWSSTDIO: utf-8
+
 jobs:
   test-build:
     runs-on: windows-latest
@@ -28,6 +32,8 @@ jobs:
     - name: Create icon
       run: |
         python create_icon.py
+      env:
+        PYTHONIOENCODING: utf-8
         
     - name: Test build
       run: |
@@ -35,7 +41,6 @@ jobs:
         
     - name: Test executable
       run: |
-        # 简单测试可执行文件是否能启动（无GUI模式）
         echo "Build completed successfully"
         dir dist/SwaggerAPITester/
         

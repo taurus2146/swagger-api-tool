@@ -110,7 +110,7 @@ pip install pyinstaller pillow
 python create_icon.py
 
 # 本地打包测试
-python build_local.py
+pyinstaller build.spec --clean
 ```
 
 ### 使用指南
