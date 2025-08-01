@@ -6,13 +6,13 @@
       "Content-Type": "application/json"
     },
     "data": {
-      "loginPlatform": "PC",
       "loginType": "password",
-      "password": "Aa123456",
-      "username": "yumi002"
+      "username": "companyUser01",
+      "password": "SecurePass123!",
+      "loginPlatform": "PC"
     },
     "token_path": "data",
     "use_prefix": false,
-    "token": "498b70ee7ad842d98977b56e5d65f040"
+    "token": "4eeb9a1a34464e69811145e9c3d335f5"
   }
 }

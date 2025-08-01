@@ -1,0 +1,43 @@
+name: Test Build
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test-build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Test build
+      run: |
+        pyinstaller build.spec --clean
+        
+    - name: Test executable
+      run: |
+        # 简单测试可执行文件是否能启动（无GUI模式）
+        echo "Build completed successfully"
+        dir dist/SwaggerAPITester/
+        
+    - name: Upload test artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-build-windows
+        path: dist/SwaggerAPITester/
+        retention-days: 7

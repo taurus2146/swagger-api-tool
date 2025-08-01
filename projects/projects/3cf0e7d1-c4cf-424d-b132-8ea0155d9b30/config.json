@@ -1,0 +1,16 @@
+{
+  "id": "3cf0e7d1-c4cf-424d-b132-8ea0155d9b30",
+  "name": "易洵装饰",
+  "description": "易洵装饰",
+  "swagger_source": {
+    "type": "url",
+    "location": "http://216.155.135.244:8888/yixun-decoration/v3/api-docs"
+  },
+  "base_url": "http://216.155.135.244:8888/",
+  "auth_config": {},
+  "created_at": "2025-07-31T16:54:24.891492",
+  "last_accessed": "2025-08-01T09:23:29.551523",
+  "api_count": 0,
+  "ui_state": {},
+  "tags": []
+}

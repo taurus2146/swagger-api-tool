@@ -1,6 +1,83 @@
 [
   {
     "api": {
+      "path": "/customer/export-task/my",
+      "method": "GET",
+      "summary": "我的导出任务",
+      "description": "",
+      "tags": [
+        "导出任务管理"
+      ],
+      "operationId": "getMyTaskUsingGET",
+      "parameters": [],
+      "requestBody": null,
+      "responses": {
+        "200": {
+          "description": "OK",
+          "schema": {
+            "$ref": "#/definitions/导出任务视图对象",
+            "originalRef": "导出任务视图对象"
+          }
+        },
+        "401": {
+          "description": "Unauthorized"
+        },
+        "403": {
+          "description": "Forbidden"
+        },
+        "404": {
+          "description": "Not Found"
+        }
+      },
+      "requires_auth": false
+    },
+    "url": "http://localhost:8081/customer/export-task/my",
+    "method": "GET",
+    "headers": {
+      "Authorization": "5e8c0c030c07450098ddafff99ae6084"
+    },
+    "query_params": {},
+    "path_params": {},
+    "request_body": null,
+    "response": {
+      "status_code": 200,
+      "headers": {
+        "Vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+        "X-Content-Type-Options": "nosniff",
+        "X-XSS-Protection": "1; mode=block",
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "Content-Type": "application/json",
+        "Transfer-Encoding": "chunked",
+        "Date": "Fri, 01 Aug 2025 01:25:58 GMT",
+        "Keep-Alive": "timeout=60",
+        "Connection": "keep-alive"
+      },
+      "body": {
+        "code": 200,
+        "msg": "成功",
+        "success": true,
+        "data": null,
+        "fail": false
+      },
+      "elapsed": 0.25578
+    },
+    "error": null,
+    "custom_data": {
+      "path_params": {},
+      "query_params": {},
+      "headers": {
+        "Authorization": "5e8c0c030c07450098ddafff99ae6084"
+      },
+      "body": null
+    },
+    "use_auth": true,
+    "auth_type": "bearer",
+    "timestamp": "2025-08-01 09:25:58"
+  },
+  {
+    "api": {
       "path": "/pc/admin/tickets",
       "method": "GET",
       "summary": "查询所有工单列表",

@@ -54,13 +54,36 @@
 
 ## 安装和使用
 
-### 环境要求
+### 📦 快速开始（推荐）
 
+#### 下载预编译版本
+1. 访问 [Releases](../../releases) 页面
+2. 下载适合你系统的版本：
+   - **Windows**: `SwaggerAPITester-windows.zip`
+   - **Linux**: `SwaggerAPITester-linux.tar.gz`
+3. 解压并运行可执行文件
+
+#### Windows 用户
+```bash
+# 解压下载的文件
+# 双击运行 SwaggerAPITester.exe
+```
+
+#### Linux 用户
+```bash
+tar -xzf SwaggerAPITester-linux.tar.gz
+cd SwaggerAPITester
+./SwaggerAPITester
+```
+
+### 🛠️ 开发环境安装
+
+#### 环境要求
 - Python 3.7+
 - PyQt5
 - 其他依赖见 `requirements.txt`
 
-### 安装步骤
+#### 安装步骤
 
 1. **克隆项目**
    ```bash
@@ -77,6 +100,18 @@
    ```bash
    python main.py
    ```
+
+#### 本地打包测试
+```bash
+# 安装打包依赖
+pip install pyinstaller pillow
+
+# 创建图标文件
+python create_icon.py
+
+# 本地打包测试
+python build_local.py
+```
 
 ### 使用指南
 
@@ -161,6 +196,30 @@ pytest --html=report.html tests/
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
+## 🚀 自动构建和发布
+
+本项目使用 GitHub Actions 实现自动构建和发布：
+
+### 构建流程
+- **推送代码时**：自动运行测试构建，确保代码质量
+- **创建标签时**：自动构建并发布可执行文件到 Releases
+
+### 发布新版本
+```bash
+# 创建并推送标签
+git tag v1.0.0
+git push origin v1.0.0
+
+# GitHub Actions 会自动：
+# 1. 构建 Windows 和 Linux 版本
+# 2. 创建 Release
+# 3. 上传可执行文件
+```
+
+### 构建状态
+![Build Status](../../actions/workflows/build-release.yml/badge.svg)
+![Test Build](../../actions/workflows/test-build.yml/badge.svg)
+
 ## 更新日志
 
 ### v1.0.0
@@ -168,6 +227,7 @@ pytest --html=report.html tests/
 - 支持基本的 Swagger 文档解析和 API 测试
 - 实现图形化界面和认证管理
 - 添加主题支持和数据生成功能
+- 集成自动构建和发布流程
 
 ---
 
