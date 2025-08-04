@@ -76,6 +76,22 @@ cd SwaggerAPITester
 ./SwaggerAPITester
 ```
 
+### 📁 数据存储位置
+
+应用会根据运行模式自动选择合适的数据存储位置：
+
+#### 标准模式（默认）
+- **Windows**: `%APPDATA%\SwaggerAPITester`
+- **macOS**: `~/Library/Application Support/SwaggerAPITester`  
+- **Linux**: `~/.local/share/SwaggerAPITester`
+
+#### 便携模式
+- 数据存储在应用程序目录下的 `data` 文件夹
+- 要启用便携模式，在exe文件同目录下保留 `portable.txt` 文件
+- 便携模式适合U盘携带或不想在系统中留下数据的用户
+
+你可以在应用的"帮助"菜单中查看当前的存储位置和模式。
+
 ### 🛠️ 开发环境安装
 
 #### 环境要求

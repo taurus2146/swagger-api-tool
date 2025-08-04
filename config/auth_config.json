@@ -7,12 +7,12 @@
     },
     "data": {
       "loginType": "password",
-      "username": "companyUser01",
-      "password": "SecurePass123!",
+      "username": "yumi001",
+      "password": "Aa123456",
       "loginPlatform": "PC"
     },
     "token_path": "data",
     "use_prefix": false,
-    "token": "0b4c4879f7064f9998ee54eff3fa0873"
+    "token": "a6dca1bef85b424d9e2508d290058a25"
   }
 }

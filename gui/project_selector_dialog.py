@@ -20,6 +20,7 @@ from .project_edit_dialog import ProjectEditDialog
 class ProjectSelectorDialog(QDialog):
     """项目选择和管理对话框"""
     project_selected = pyqtSignal(str)  # 发送 project_id
+    project_updated = pyqtSignal()  # 项目更新信号
 
     def __init__(self, project_manager: ProjectManager, parent=None):
         super().__init__(parent)
@@ -255,6 +256,8 @@ class ProjectSelectorDialog(QDialog):
         """项目保存后的处理"""
         self.project_manager.update_project(project)
         self.refresh_project_list()
+        # 发射信号通知主窗口更新显示
+        self.project_updated.emit()
 
     def _show_context_menu(self, pos):
         """显示上下文菜单"""

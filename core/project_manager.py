@@ -11,7 +11,9 @@ import threading
 import time
 
 from .project_models import Project, SwaggerSource
-from .project_storage import ProjectStorage
+from .database_storage import DatabaseStorage
+from .storage_utils import get_default_storage_path
+from .database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,38 @@ logger = logging.getLogger(__name__)
 class ProjectManager:
     """核心管理类，协调所有项目相关操作"""
 
-    def __init__(self, storage_path: str = "./projects"):
-        self.storage = ProjectStorage(storage_path)
-        self.projects = {p.id: p for p in self.storage.load_all_projects()}
-        self.global_config = self.storage.load_global_config()
+    def __init__(self, storage_path: str = None):
+        if storage_path is None:
+            storage_path = get_default_storage_path()
+        
+        # 获取数据库文件的完整路径
+        from .storage_utils import get_default_database_path
+        db_path = get_default_database_path()
+        
+        # 初始化数据库管理器
+        self.db_manager = DatabaseManager(db_path)
+        if not self.db_manager.connect():
+            logger.error("数据库连接失败")
+        else:
+            self.db_manager.initialize_database()
+        
+        # 检查并执行数据迁移（向后兼容性）
+        self._check_and_migrate_legacy_data(storage_path)
+        
+        # 使用新的DatabaseStorage（传入数据库文件路径）
+        self.storage = DatabaseStorage(db_path)
+        
+        # 加载项目和配置
+        try:
+            self.projects = {p.id: p for p in self.storage.load_all_projects()}
+            self.global_config = self.storage.load_global_config()
+        except Exception as e:
+            logger.error(f"加载数据失败: {e}")
+            # 如果加载失败，初始化空数据
+            self.projects = {}
+            from .project_models import GlobalConfig
+            self.global_config = GlobalConfig()
+        
         self.current_project: Optional[Project] = None
         
         self._load_current_project_on_startup()
@@ -31,7 +61,7 @@ class ProjectManager:
         self._stop_autosave = threading.Event()
         self._autosave_thread = threading.Thread(target=self._autosave_loop, daemon=True)
         self._autosave_thread.start()
-        logger.info("自动保存线程已启动")
+        logger.info("项目管理器已初始化，使用数据库存储")
 
     def _load_current_project_on_startup(self):
         """启动时加载当前项目"""
@@ -147,4 +177,69 @@ class ProjectManager:
         if self.current_project:
             self.update_project(self.current_project)
         logger.info("项目管理器已关闭")
+    
+    def _check_and_migrate_legacy_data(self, storage_path: str):
+        """检查并迁移旧版本数据"""
+        try:
+            import os
+            from .migration_service import MigrationService
+            
+            # 检查是否存在旧的JSON数据文件
+            legacy_files = [
+                os.path.join(os.path.dirname(storage_path), 'projects.json'),
+                os.path.join(os.path.dirname(storage_path), 'global_config.json')
+            ]
+            
+            has_legacy_data = any(os.path.exists(f) for f in legacy_files)
+            
+            if has_legacy_data:
+                logger.info("检测到旧版本数据文件，开始迁移...")
+                migration_service = MigrationService(storage_path)
+                
+                # 执行迁移
+                migration_result = migration_service.migrate_from_json(
+                    os.path.dirname(storage_path)
+                )
+                
+                if migration_result['success']:
+                    logger.info(f"数据迁移成功: {migration_result['migrated_projects']} 个项目已迁移")
+                else:
+                    logger.error(f"数据迁移失败: {migration_result.get('error', '未知错误')}")
+            
+        except Exception as e:
+            logger.warning(f"数据迁移检查失败: {e}")
+    
+    def get_database_info(self) -> dict:
+        """获取数据库信息"""
+        try:
+            return {
+                'database_path': self.db_manager.db_path,
+                'database_version': self.db_manager.get_database_version(),
+                'total_projects': len(self.projects),
+                'current_project': self.current_project.name if self.current_project else None,
+                'storage_type': 'SQLite Database'
+            }
+        except Exception as e:
+            logger.error(f"获取数据库信息失败: {e}")
+            return {
+                'error': str(e),
+                'storage_type': 'Unknown'
+            }
+    
+    def perform_database_maintenance(self) -> dict:
+        """执行数据库维护"""
+        try:
+            from .database_diagnostics import DatabaseMaintenanceManager
+            
+            maintenance_manager = DatabaseMaintenanceManager(self.db_manager.db_path)
+            result = maintenance_manager.run_auto_maintenance()
+            
+            logger.info(f"数据库维护完成: {result['successful_tasks']}/{result['total_tasks']} 任务成功")
+            return result
+        except Exception as e:
+            logger.error(f"数据库维护失败: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
 

@@ -8,14 +8,17 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, 
     QListWidget, QListWidgetItem, QSplitter, QLabel, QGroupBox,
-    QTabWidget, QComboBox, QCheckBox, QProgressBar
+    QTabWidget, QComboBox, QCheckBox, QProgressBar, QMessageBox,
+    QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QTextCursor, QColor, QTextCharFormat, QFont
+
+from core.test_history_repository import TestHistoryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +32,20 @@ class TestResultWidget(QWidget):
     history_selected = pyqtSignal(dict)  # 选中历史记录信号
     resend_requested = pyqtSignal(dict)  # 重新发送请求信号
     
-    def __init__(self, parent=None):
+    def __init__(self, project_manager=None, parent=None):
         super().__init__(parent)
-        self.test_history = []  # 测试历史记录
+        self.project_manager = project_manager  # 项目管理器
+        self.test_history_repo = None  # 测试历史仓库
         self.current_result = None  # 当前测试结果
-        self.history_file = os.path.join("config", "test_history.json")  # 历史记录文件
         self.current_api_path = None  # 当前选中的API路径
         self.click_timer = None  # 用于区分单击和双击的定时器
         self.clicked_item = None  # 记录被点击的项
+        self.current_project_id = None  # 当前项目ID
+        self.search_timer = None  # 搜索防抖定时器
+        
+        # 初始化数据库连接
+        self._init_database()
+        
         self.init_ui()
         self.load_history()  # 加载历史记录
         
@@ -93,22 +102,52 @@ class TestResultWidget(QWidget):
         history_widget = QWidget()
         history_layout = QVBoxLayout(history_widget)
         
-        # 筛选控件
-        filter_layout = QHBoxLayout()
+        # 第一行筛选控件 - 接口筛选
+        filter_layout1 = QHBoxLayout()
         
         # 显示所有或当前接口的选项
         self.show_all_checkbox = QCheckBox("显示所有接口历史")
         self.show_all_checkbox.setChecked(True)
         self.show_all_checkbox.stateChanged.connect(self._update_history_list)
-        filter_layout.addWidget(self.show_all_checkbox)
+        filter_layout1.addWidget(self.show_all_checkbox)
         
-        filter_layout.addWidget(QLabel("当前接口:"))
+        filter_layout1.addWidget(QLabel("当前接口:"))
         self.current_api_label = QLabel("未选择")
         self.current_api_label.setStyleSheet("QLabel { color: #666; }")
-        filter_layout.addWidget(self.current_api_label)
+        filter_layout1.addWidget(self.current_api_label)
         
-        filter_layout.addStretch()
-        history_layout.addLayout(filter_layout)
+        filter_layout1.addStretch()
+        history_layout.addLayout(filter_layout1)
+        
+        # 第二行筛选控件 - 高级筛选
+        filter_layout2 = QHBoxLayout()
+        
+        # 状态码筛选
+        filter_layout2.addWidget(QLabel("状态码:"))
+        self.status_filter = QComboBox()
+        self.status_filter.addItems(["全部", "成功 (2xx)", "客户端错误 (4xx)", "服务器错误 (5xx)", "错误 (非2xx)"])
+        self.status_filter.currentIndexChanged.connect(self._update_history_list)
+        self.status_filter.setMinimumWidth(120)
+        filter_layout2.addWidget(self.status_filter)
+        
+        # 时间筛选
+        filter_layout2.addWidget(QLabel("时间:"))
+        self.time_filter = QComboBox()
+        self.time_filter.addItems(["全部", "最近1小时", "今天", "最近7天", "最近30天"])
+        self.time_filter.currentIndexChanged.connect(self._update_history_list)
+        self.time_filter.setMinimumWidth(100)
+        filter_layout2.addWidget(self.time_filter)
+        
+        # 搜索框
+        filter_layout2.addWidget(QLabel("搜索:"))
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("搜索路径、描述或参数...")
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        self.search_input.setMinimumWidth(200)
+        filter_layout2.addWidget(self.search_input)
+        
+        filter_layout2.addStretch()
+        history_layout.addLayout(filter_layout2)
         
         # 添加操作提示
         tips_label = QLabel("💡 提示：单击查看结果，双击编辑参数")
@@ -130,15 +169,29 @@ class TestResultWidget(QWidget):
         self.history_list.setAlternatingRowColors(True)  # 交替行颜色
         self.history_list.setSpacing(3)  # 增加项之间的间距
         self.history_list.setWordWrap(True)  # 启用文字换行
+        self.history_list.setTextElideMode(Qt.ElideNone)  # 禁用文本省略
+        self.history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # 需要时显示水平滚动条
+        self.history_list.setResizeMode(QListWidget.Adjust)  # 自动调整大小
+        self.history_list.setUniformItemSizes(False)  # 允许不同高度的项目
         # 设置样式，确保多行文本正确显示
         self.history_list.setStyleSheet("""
+            QListWidget {
+                outline: none;
+            }
             QListWidget::item {
-                padding: 5px;
+                padding: 10px;
                 border-bottom: 1px solid #e0e0e0;
+                margin: 2px 5px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
             }
             QListWidget::item:selected {
                 background-color: #3daee9;
                 color: white;
+                border-radius: 4px;
+            }
+            QListWidget::item:hover {
+                background-color: #f0f0f0;
             }
         """)
         history_layout.addWidget(self.history_list)
@@ -154,6 +207,18 @@ class TestResultWidget(QWidget):
         history_layout.addLayout(history_button_layout)
         
         self.tabs.addTab(history_widget, "历史记录")
+        
+    def _init_database(self):
+        """初始化数据库连接"""
+        if self.project_manager and hasattr(self.project_manager, 'db_manager'):
+            self.test_history_repo = TestHistoryRepository(self.project_manager.db_manager)
+        else:
+            logger.warning("无法初始化测试历史数据库，将使用内存存储")
+    
+    def set_project_id(self, project_id: str):
+        """设置当前项目ID"""
+        self.current_project_id = project_id
+        self.load_history()
         
     def display_test_result(self, result, add_to_history=True):
         """
@@ -189,8 +254,9 @@ class TestResultWidget(QWidget):
         self._append_colored_text("\n" + "="*60 + "\n\n", QColor(200, 200, 200))
         
         # 请求信息
-        self._append_colored_text("请求信息:\n", QColor(0, 150, 0))
-        self._append_colored_text(f"URL: {result.get('url', '')}\n", QColor(50, 50, 50))
+        self._append_colored_text("请求信息：\n", QColor(0, 150, 0))
+        # 移除URL显示，因为它太长了
+        # self._append_colored_text(f"URL: {result.get('url', '')}\n", QColor(50, 50, 50))
         self._append_colored_text(f"方法: {result.get('method', '')}\n", QColor(50, 50, 50))
         
         # 路径参数
@@ -296,6 +362,11 @@ class TestResultWidget(QWidget):
         Args:
             result (dict): 测试结果
         """
+        if not self.current_project_id:
+            logger.warning("无当前项目ID，无法保存历史记录")
+            return
+            
+
         # 创建结果的深拷贝，避免引用问题
         import copy
         history_entry = copy.deepcopy(result)
@@ -307,15 +378,9 @@ class TestResultWidget(QWidget):
         api_info = history_entry.get('api', {})
         logger.info(f"添加到历史记录 - API信息: method={api_info.get('method')}, path={api_info.get('path')}, summary='{api_info.get('summary')}'")
         
-        # 添加到历史记录列表
-        self.test_history.insert(0, history_entry)
-        
-        # 限制历史记录数量
-        if len(self.test_history) > 500:  # 增加到500条
-            self.test_history = self.test_history[:500]
-            
-        # 保存历史记录
-        self.save_history()
+        # 保存到数据库
+        if self.test_history_repo:
+            self.test_history_repo.add_test_history(self.current_project_id, history_entry)
             
         # 更新历史记录列表显示
         self._update_history_list()
@@ -324,18 +389,80 @@ class TestResultWidget(QWidget):
         """更新历史记录列表显示"""
         self.history_list.clear()
         
-        # 根据筛选条件显示历史记录
-        filtered_history = []
+        if not self.test_history_repo or not self.current_project_id:
+            return
+            
+        # 从数据库获取历史记录
         if self.show_all_checkbox.isChecked():
             # 显示所有历史
-            filtered_history = self.test_history
+            filtered_history = self.test_history_repo.get_test_history(self.current_project_id)
         else:
             # 只显示当前接口的历史
             if self.current_api_path:
-                filtered_history = [
-                    result for result in self.test_history 
-                    if result.get('api', {}).get('path') == self.current_api_path
+                # 从当前路径提取方法
+                method = 'GET'  # 默认方法
+                if hasattr(self, '_current_api_method'):
+                    method = self._current_api_method
+                filtered_history = self.test_history_repo.get_test_history_by_api(
+                    self.current_project_id, self.current_api_path, method
+                )
+            else:
+                filtered_history = []
+        
+        # 应用时间筛选
+        time_filter_index = self.time_filter.currentIndex()
+        if time_filter_index > 0:  # 不是"全部"
+            now = datetime.now()
+            if time_filter_index == 1:  # 最近1小时
+                cutoff_time = now - timedelta(hours=1)
+            elif time_filter_index == 2:  # 今天
+                cutoff_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif time_filter_index == 3:  # 最近7天
+                cutoff_time = now - timedelta(days=7)
+            elif time_filter_index == 4:  # 最近30天
+                cutoff_time = now - timedelta(days=30)
+            
+            # 过滤时间
+            filtered_history = [
+                h for h in filtered_history 
+                if datetime.strptime(h.get('timestamp', ''), "%Y-%m-%d %H:%M:%S") >= cutoff_time
+            ]
+        
+        # 应用状态码筛选
+        status_filter_index = self.status_filter.currentIndex()
+        if status_filter_index > 0:  # 不是"全部"
+            filtered_by_status = []
+            for h in filtered_history:
+                status_code = h.get('response', {}).get('status_code', 0)
+                if status_filter_index == 1 and 200 <= status_code < 300:  # 成功
+                    filtered_by_status.append(h)
+                elif status_filter_index == 2 and 400 <= status_code < 500:  # 客户端错误
+                    filtered_by_status.append(h)
+                elif status_filter_index == 3 and 500 <= status_code < 600:  # 服务器错误
+                    filtered_by_status.append(h)
+                elif status_filter_index == 4 and (status_code < 200 or status_code >= 300):  # 错误（非2xx）
+                    filtered_by_status.append(h)
+            filtered_history = filtered_by_status
+        
+        # 应用搜索筛选
+        search_text = self.search_input.text().strip().lower()
+        if search_text:
+            filtered_by_search = []
+            for h in filtered_history:
+                # 搜索路径、描述、参数
+                api_info = h.get('api', {})
+                search_targets = [
+                    api_info.get('path', '').lower(),
+                    api_info.get('summary', '').lower(),
+                    api_info.get('method', '').lower(),
+                    json.dumps(h.get('query_params', {})).lower(),
+                    json.dumps(h.get('path_params', {})).lower(),
+                    json.dumps(h.get('request_body', {})).lower(),
                 ]
+                
+                if any(search_text in target for target in search_targets):
+                    filtered_by_search.append(h)
+            filtered_history = filtered_by_search
         
         for result in filtered_history:
             api_info = result.get('api', {})
@@ -353,22 +480,46 @@ class TestResultWidget(QWidget):
             logger.info(f"Summary是否存在: {bool(summary)}, Summary类型: {type(summary)}, Summary长度: {len(summary) if summary else 0}")
             
             # 构建显示文本
-            # 第一行：时间戳
-            # 第二行：描述（如果有） - 方法 路径 → 状态码
             lines = []
-            lines.append(f"[{timestamp}]")
             
-            # 构建第二行
-            if summary:
-                # 限制描述长度
-                display_summary = summary
-                if len(summary) > 30:
-                    display_summary = summary[:27] + "..."
-                second_line = f"{display_summary} - {method} {path} → {status_code}"
+            # 第一行：时间戳 + 状态码
+            status_str = f"[{status_code}]" if status_code else "[---]"
+            # 根据状态码设置颜色标记
+            if 200 <= status_code < 300:
+                status_emoji = "✅"
+            elif 400 <= status_code < 500:
+                status_emoji = "⚠️"
             else:
-                second_line = f"{method} {path} → {status_code}"
+                status_emoji = "❌"
+            lines.append(f"{timestamp} {status_emoji} {status_str}")
             
+            # 第二行：方法 + 路径（完整显示）
+            second_line = f"{method} {path}"
             lines.append(second_line)
+            
+            # 第三行：描述（如果有，完整显示）
+            if summary:
+                # 完整显示描述，不进行截断
+                lines.append(f"📝 {summary}")
+            else:
+                # 如果没有描述，显示默认文本
+                lines.append("📝 [无描述]")
+            
+            # 第四行：响应时间和大小（如果有）
+            elapsed = response.get('elapsed', 0)
+            response_size = len(str(response.get('body', '')))
+            if elapsed > 0:
+                perf_line = f"⏱️ {elapsed:.3f}s"
+                if response_size > 0:
+                    # 格式化响应大小
+                    if response_size < 1024:
+                        size_str = f"{response_size}B"
+                    elif response_size < 1024 * 1024:
+                        size_str = f"{response_size / 1024:.1f}KB"
+                    else:
+                        size_str = f"{response_size / (1024 * 1024):.1f}MB"
+                    perf_line += f" | 📦 {size_str}"
+                lines.append(perf_line)
             
             item_text = "\n".join(lines)
             logger.info(f"最终显示文本: {repr(item_text)}")
@@ -385,12 +536,15 @@ class TestResultWidget(QWidget):
                 
             # 设置字体
             font = QFont()
-            font.setFamily("Consolas")  # 使用等宽字体
+            font.setFamily("Microsoft YaHei UI")  # 使用支持表情符号的字体
             font.setPointSize(9)
             item.setFont(font)
             
-            # 设置项目高度 - 两行文本的高度
-            item.setSizeHint(QSize(0, 50))  # 统一高度
+            # 设置项目高度 - 动态高度，根据行数
+            line_count = len(lines)
+            # 增加基础高度和每行高度，确保所有文本都能显示
+            item_height = 30 + (line_count * 20)  # 增加基础高度和行高
+            item.setSizeHint(QSize(0, item_height))
                 
             # 存储完整的结果数据
             item.setData(Qt.UserRole, result)
@@ -452,20 +606,28 @@ class TestResultWidget(QWidget):
             
     def clear_history(self):
         """清空历史记录"""
-        # 根据筛选条件清空历史
-        if self.show_all_checkbox.isChecked():
-            # 清空所有历史
-            self.test_history.clear()
-        else:
-            # 只清空当前接口的历史
-            if self.current_api_path:
-                self.test_history = [
-                    result for result in self.test_history 
-                    if result.get('api', {}).get('path') != self.current_api_path
-                ]
+        if not self.test_history_repo or not self.current_project_id:
+            return
+            
+        # 确认对话框
+        reply = QMessageBox.question(
+            self, '确认清空', 
+            '确定要清空历史记录吗？此操作不可恢复。',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
         
-        self.save_history()
-        self._update_history_list()
+        if reply == QMessageBox.Yes:
+            # 根据筛选条件清空历史
+            if self.show_all_checkbox.isChecked():
+                # 清空所有历史
+                self.test_history_repo.clear_test_history(self.current_project_id)
+            else:
+                # 只清空当前接口的历史
+                if self.current_api_path:
+                    self.test_history_repo.clear_test_history(self.current_project_id, self.current_api_path)
+            
+            self._update_history_list()
         
     def _on_export_curl(self):
         """导出当前结果为cURL命令"""
@@ -497,6 +659,7 @@ class TestResultWidget(QWidget):
         """
         if api_info:
             self.current_api_path = api_info.get('path', '')
+            self._current_api_method = api_info.get('method', 'GET')
             summary = api_info.get('summary', '')
             display_text = f"{api_info.get('method', '')} {self.current_api_path}"
             if summary:
@@ -508,30 +671,34 @@ class TestResultWidget(QWidget):
             if not self.show_all_checkbox.isChecked():
                 self._update_history_list()
     
+    def _on_search_text_changed(self):
+        """搜索框文本变化时的处理（带防抖）"""
+        # 取消之前的定时器
+        if self.search_timer:
+            self.search_timer.stop()
+        
+        # 创建新的定时器，300ms后执行搜索
+        self.search_timer = QTimer()
+        self.search_timer.timeout.connect(self._update_history_list)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.start(300)
+    
     def save_history(self):
-        """保存历史记录到文件"""
-        try:
-            # 确保目录存在
-            os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
-            
-            # 保存历史记录
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(self.test_history, f, ensure_ascii=False, indent=2)
-            logger.info(f"保存了 {len(self.test_history)} 条历史记录")
-        except Exception as e:
-            logger.error(f"保存历史记录失败: {e}")
+        """保存历史记录到数据库（已由add_to_history处理，此方法保留用于兼容性）"""
+        pass
     
     def load_history(self):
-        """从文件加载历史记录"""
-        try:
-            if os.path.exists(self.history_file):
-                with open(self.history_file, 'r', encoding='utf-8') as f:
-                    self.test_history = json.load(f)
-                logger.info(f"加载了 {len(self.test_history)} 条历史记录")
+        """从数据库加载历史记录"""
+        if self.test_history_repo and self.current_project_id:
+            try:
+                # 更新历史记录列表显示
                 self._update_history_list()
-        except Exception as e:
-            logger.error(f"加载历史记录失败: {e}")
-            self.test_history = []
+                
+                # 获取统计信息
+                stats = self.test_history_repo.get_test_history_stats(self.current_project_id)
+                logger.info(f"加载了项目 {self.current_project_id} 的历史记录，共 {stats.get('total_count', 0)} 条")
+            except Exception as e:
+                logger.error(f"加载历史记录失败: {e}")
     
     def show_loading_state(self):
         """显示加载状态"""

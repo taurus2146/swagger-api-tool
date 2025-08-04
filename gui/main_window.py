@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         right_tabs.addTab(self.param_editor, "参数编辑")
 
         # 测试结果
-        self.result_widget = TestResultWidget()
+        self.result_widget = TestResultWidget(project_manager=self.project_manager)
         right_tabs.addTab(self.result_widget, "测试结果")
 
         # 连接信号
@@ -150,6 +150,15 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         self.status_label = QLabel("就绪")
         status.addWidget(self.status_label)
+        
+        # 数据库状态显示
+        status.addPermanentWidget(QLabel("|"))
+        self.db_status_label = QLabel("数据库: 连接中...")
+        self.db_status_label.setStyleSheet("color: #666;")
+        status.addPermanentWidget(self.db_status_label)
+        
+        # 更新数据库状态
+        self._update_database_status()
 
         # 菜单
         self._build_menu()
@@ -178,6 +187,15 @@ class MainWindow(QMainWindow):
         tools_menu = menu_bar.addMenu("工具")
         tools_menu.addAction("认证配置", self._show_auth_dialog)
         tools_menu.addAction("清空历史", self.result_widget.clear_history)
+        
+        # 数据库管理菜单
+        database_menu = menu_bar.addMenu("数据库")
+        database_menu.addAction("数据库设置", self._show_database_settings)
+        database_menu.addAction("数据库诊断", self._show_database_diagnostics)
+        database_menu.addAction("数据恢复", self._show_data_recovery)
+        database_menu.addSeparator()
+        database_menu.addAction("数据库信息", self._show_database_info)
+        database_menu.addAction("数据库维护", self._perform_database_maintenance)
         
         # 主题菜单
         theme_menu = menu_bar.addMenu("主题")
@@ -216,16 +234,26 @@ class MainWindow(QMainWindow):
     def _after_doc_loaded(self, source_type: str, location: str):
         apis = self.swagger_parser.get_api_list()
         self.api_list_widget.set_api_list(apis)
-        self.api_tester.set_base_url(self.swagger_parser.get_base_url())
+        
+        # 检查是否需要提示保存为项目
+        current_project = self.project_manager.get_current_project()
+        should_prompt_save = False
+        
+        # 优先使用项目的基础URL，如果项目没有设置基础URL，则使用Swagger文档的基础URL
+        if current_project and current_project.base_url:
+            # 使用项目设置的基础URL
+            self.api_tester.set_base_url(current_project.base_url)
+            logger.info(f"使用项目基础URL: {current_project.base_url}")
+        else:
+            # 使用Swagger文档的基础URL
+            swagger_base_url = self.swagger_parser.get_base_url()
+            self.api_tester.set_base_url(swagger_base_url)
+            logger.info(f"使用Swagger文档基础URL: {swagger_base_url}")
         
         if hasattr(self.api_list_widget, 'common_prefix'):
             self.param_editor.set_common_prefix(self.api_list_widget.common_prefix)
         
         self.status_label.setText(f"已加载 {len(apis)} 个接口")
-        
-        # 检查是否需要提示保存为项目
-        current_project = self.project_manager.get_current_project()
-        should_prompt_save = False
         
         if not current_project:
             # 没有当前项目，提示保存
@@ -355,6 +383,7 @@ class MainWindow(QMainWindow):
         """显示项目选择器"""
         dialog = ProjectSelectorDialog(self.project_manager, self)
         dialog.project_selected.connect(self._load_project)
+        dialog.project_updated.connect(self._update_current_project_display)
         dialog.exec_()
 
     def _load_project(self, project_id: str):
@@ -364,6 +393,9 @@ class MainWindow(QMainWindow):
             self.current_project_label.setText(project.name)
             self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
             
+            # 设置测试结果组件的项目ID
+            self.result_widget.set_project_id(project_id)
+            
             # 更新URL输入框为Swagger文档地址
             if project.swagger_source.type == "url":
                 # 如果是URL来源，显示Swagger文档URL
@@ -371,6 +403,11 @@ class MainWindow(QMainWindow):
             else:
                 # 文件来源，清空URL输入框
                 self.url_input.clear()
+            
+            # 设置项目的基础URL（如果有的话）
+            if project.base_url:
+                self.api_tester.set_base_url(project.base_url)
+                logger.info(f"加载项目时设置基础URL: {project.base_url}")
             
             # 加载Swagger文档
             if project.swagger_source.type == "url":
@@ -413,6 +450,9 @@ class MainWindow(QMainWindow):
                 import os
                 suggested_name = os.path.splitext(os.path.basename(location))[0] or "API项目"
             
+            # 获取当前加载的API数量
+            api_count = len(self.swagger_parser.get_api_list()) if self.swagger_parser else 0
+            
             # 创建预填充的项目对象
             project = Project.create_new(
                 name=suggested_name,
@@ -420,6 +460,7 @@ class MainWindow(QMainWindow):
                 swagger_source=swagger_source,
                 base_url=base_url
             )
+            project.api_count = api_count
             
             dialog = ProjectEditDialog(project=project, parent=self)
             dialog.project_saved.connect(self._on_project_saved)
@@ -436,6 +477,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
         self.project_manager.set_current_project(project.id)
         self._update_recent_projects_menu()
+        
+        # 设置测试结果组件的项目ID
+        self.result_widget.set_project_id(project.id)
+        
+        # 如果保存的项目有基础URL，立即应用它
+        if project.base_url:
+            self.api_tester.set_base_url(project.base_url)
+            logger.info(f"项目保存后应用基础URL: {project.base_url}")
         
     def _show_project_menu(self):
         """显示项目管理菜单"""
@@ -574,6 +623,9 @@ class MainWindow(QMainWindow):
                     self.current_project_label.setText(project.name)
                     self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
                     
+                    # 设置测试结果组件的项目ID
+                    self.result_widget.set_project_id(project.id)
+                    
                     try:
                         # 加载对应的Swagger文档
                         if project.swagger_source.type == "url":
@@ -695,6 +747,143 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"无法设置标题栏颜色: {e}", exc_info=True)
     
+    # ------------------------- 数据库管理 ------------------------- #
+    def _update_database_status(self):
+        """更新数据库状态显示"""
+        try:
+            db_info = self.project_manager.get_database_info()
+            if 'error' in db_info:
+                self.db_status_label.setText("数据库: 错误")
+                self.db_status_label.setStyleSheet("color: red;")
+            else:
+                project_count = db_info.get('total_projects', 0)
+                self.db_status_label.setText(f"数据库: {project_count} 个项目")
+                self.db_status_label.setStyleSheet("color: green;")
+        except Exception as e:
+            self.db_status_label.setText("数据库: 未知")
+            self.db_status_label.setStyleSheet("color: orange;")
+            logger.warning(f"更新数据库状态失败: {e}")
+    
+    def _show_database_settings(self):
+        """显示数据库设置对话框"""
+        try:
+            from .database_settings_dialog import DatabaseSettingsDialog
+            dialog = DatabaseSettingsDialog(self.project_manager.db_manager.db_path, self)
+            if dialog.exec_() == dialog.Accepted:
+                # 如果数据库设置有变化，更新状态
+                self._update_database_status()
+        except Exception as e:
+            logger.error(f"显示数据库设置时出错: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开数据库设置:\n{str(e)}")
+    
+    def _show_database_diagnostics(self):
+        """显示数据库诊断对话框"""
+        try:
+            from .database_diagnostics_dialog import DatabaseDiagnosticsDialog
+            dialog = DatabaseDiagnosticsDialog(self.project_manager.db_manager.db_path, self)
+            dialog.exec_()
+        except Exception as e:
+            logger.error(f"显示数据库诊断时出错: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开数据库诊断:\n{str(e)}")
+    
+    def _show_data_recovery(self):
+        """显示数据恢复对话框"""
+        try:
+            from .data_recovery_dialog import DataRecoveryDialog
+            dialog = DataRecoveryDialog(self.project_manager.db_manager.db_path, self)
+            if dialog.exec_() == dialog.Accepted:
+                # 如果数据恢复成功，刷新项目列表
+                self._refresh_project_data()
+        except Exception as e:
+            logger.error(f"显示数据恢复时出错: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开数据恢复:\n{str(e)}")
+    
+    def _show_database_info(self):
+        """显示数据库信息"""
+        try:
+            db_info = self.project_manager.get_database_info()
+            
+            info_text = "数据库信息:\n\n"
+            info_text += f"数据库路径: {db_info.get('database_path', '未知')}\n"
+            info_text += f"数据库版本: {db_info.get('database_version', '未知')}\n"
+            info_text += f"存储类型: {db_info.get('storage_type', '未知')}\n"
+            info_text += f"项目总数: {db_info.get('total_projects', 0)}\n"
+            info_text += f"当前项目: {db_info.get('current_project', '无')}\n"
+            
+            if 'error' in db_info:
+                info_text += f"\n错误信息: {db_info['error']}"
+            
+            QMessageBox.information(self, "数据库信息", info_text)
+        except Exception as e:
+            logger.error(f"获取数据库信息时出错: {e}")
+            QMessageBox.critical(self, "错误", f"无法获取数据库信息:\n{str(e)}")
+    
+    def _perform_database_maintenance(self):
+        """执行数据库维护"""
+        reply = QMessageBox.question(
+            self, "数据库维护",
+            "确定要执行数据库维护吗？这可能需要几分钟时间。",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                self.status_label.setText("正在执行数据库维护...")
+                result = self.project_manager.perform_database_maintenance()
+                
+                if result.get('success', False):
+                    success_msg = f"数据库维护完成！\n\n"
+                    success_msg += f"成功任务: {result['successful_tasks']}\n"
+                    success_msg += f"总任务数: {result['total_tasks']}\n"
+                    success_msg += f"总耗时: {result.get('total_duration', 0):.2f}秒"
+                    
+                    QMessageBox.information(self, "维护完成", success_msg)
+                    self._update_database_status()
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    QMessageBox.critical(self, "维护失败", f"数据库维护失败:\n{error_msg}")
+                
+                self.status_label.setText("就绪")
+            except Exception as e:
+                logger.error(f"数据库维护时出错: {e}")
+                QMessageBox.critical(self, "错误", f"数据库维护失败:\n{str(e)}")
+                self.status_label.setText("就绪")
+    
+    def _refresh_project_data(self):
+        """刷新项目数据"""
+        try:
+            # 重新加载项目数据
+            self.project_manager.projects = {p.id: p for p in self.project_manager.storage.load_all_projects()}
+            self.project_manager.global_config = self.project_manager.storage.load_global_config()
+            
+            # 更新UI显示
+            self._update_current_project_display()
+            self._update_recent_projects_menu()
+            self._update_database_status()
+            
+            logger.info("项目数据已刷新")
+        except Exception as e:
+            logger.error(f"刷新项目数据时出错: {e}")
+    
+    def _update_current_project_display(self):
+        """更新当前项目显示"""
+        try:
+            current_project = self.project_manager.get_current_project()
+            if current_project:
+                self.current_project_label.setText(current_project.name)
+                self.setWindowTitle(f"Swagger API测试工具 - {current_project.name}")
+                # 如果项目有基础URL，更新API测试器的基础URL
+                if current_project.base_url:
+                    self.api_tester.set_base_url(current_project.base_url)
+                    logger.info(f"更新项目显示时应用基础URL: {current_project.base_url}")
+            else:
+                self.current_project_label.setText("无项目")
+                self.setWindowTitle("Swagger API测试工具")
+        except Exception as e:
+            logger.error(f"更新当前项目显示时出错: {e}")
+            self.current_project_label.setText("错误")
+            self.setWindowTitle("Swagger API测试工具")
+
     def _show_theme_preview(self):
         """显示主题预览对话框"""
         try:

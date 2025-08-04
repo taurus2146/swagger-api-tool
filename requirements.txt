@@ -8,3 +8,22 @@ urllib3==1.26.15
 pytest==7.3.1
 pytest-html==3.2.0
 faker==18.7.0
+cryptography==41.0.3
+
+# 数据库相关依赖
+sqlite3  # Python内置，无需安装
+psutil==5.9.5  # 系统监控和性能分析
+chardet==5.1.0  # 字符编码检测
+tqdm==4.65.0  # 进度条显示
+
+# 加密和安全
+bcrypt==4.0.1  # 密码哈希
+keyring==24.2.0  # 系统密钥环集成
+
+# 数据处理和分析
+pandas==2.0.3  # 数据分析（可选，用于数据导出）
+openpyxl==3.1.2  # Excel文件支持（可选）
+
+# 开发和测试工具
+coverage==7.2.7  # 代码覆盖率测试
+mock==5.1.0  # 模拟测试对象

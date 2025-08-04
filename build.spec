@@ -19,6 +19,26 @@ if os.path.exists('config'):
 if os.path.exists('assets'):
     datas += [('assets', 'assets')]
 
+# 添加便携模式配置文件（可选）
+if os.path.exists('portable.txt'):
+    datas += [('portable.txt', '.')]
+
+# 添加数据库相关文件
+if os.path.exists('docs'):
+    datas += [('docs', 'docs')]
+
+# 添加数据库初始化脚本
+if os.path.exists('scripts'):
+    datas += [('scripts', 'scripts')]
+
+# 添加数据库迁移脚本
+migration_files = []
+for root, dirs, files in os.walk('.'):
+    for file in files:
+        if file.endswith('_migration.sql') or file.endswith('_migration.py'):
+            migration_files.append((os.path.join(root, file), os.path.dirname(file)))
+datas += migration_files
+
 # 收集隐藏导入
 hiddenimports = [
     'PyQt5.QtCore',
@@ -32,7 +52,36 @@ hiddenimports = [
     'swagger_parser',
     'faker',
     'dateutil',
-    'urllib3'
+    'urllib3',
+    # 数据库相关模块
+    'sqlite3',
+    'threading',
+    'queue',
+    'hashlib',
+    'base64',
+    'secrets',
+    'psutil',
+    'chardet',
+    'tqdm',
+    'bcrypt',
+    'keyring',
+    # 加密相关
+    'cryptography',
+    'cryptography.fernet',
+    'cryptography.hazmat',
+    'cryptography.hazmat.primitives',
+    'cryptography.hazmat.primitives.kdf',
+    'cryptography.hazmat.primitives.kdf.pbkdf2',
+    'cryptography.hazmat.primitives.hashes',
+    'cryptography.hazmat.backends',
+    'cryptography.hazmat.backends.openssl',
+    # 可选的数据处理模块
+    'pandas',
+    'openpyxl',
+    # 测试相关（开发环境）
+    'unittest',
+    'unittest.mock',
+    'coverage'
 ]
 
 # 收集所有子模块
