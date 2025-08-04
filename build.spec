@@ -41,10 +41,14 @@ datas += migration_files
 
 # 收集隐藏导入
 hiddenimports = [
+    # PyQt5 核心模块
+    'PyQt5',
     'PyQt5.QtCore',
     'PyQt5.QtGui', 
     'PyQt5.QtWidgets',
     'PyQt5.QtNetwork',
+    'PyQt5.sip',
+    'sip',
     'requests',
     'json',
     'yaml',

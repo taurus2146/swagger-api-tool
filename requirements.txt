@@ -11,7 +11,7 @@ faker==18.7.0
 cryptography==41.0.3
 
 # 数据库相关依赖
-sqlite3  # Python内置，无需安装
+# sqlite3 是Python内置模块，无需安装
 psutil==5.9.5  # 系统监控和性能分析
 chardet==5.1.0  # 字符编码检测
 tqdm==4.65.0  # 进度条显示

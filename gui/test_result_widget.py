@@ -13,10 +13,10 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, 
     QListWidget, QListWidgetItem, QSplitter, QLabel, QGroupBox,
     QTabWidget, QComboBox, QCheckBox, QProgressBar, QMessageBox,
-    QLineEdit
+    QLineEdit, QApplication
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt5.QtGui import QTextCursor, QColor, QTextCharFormat, QFont
+from PyQt5.QtGui import QTextCursor, QColor, QTextCharFormat, QFont, QPalette
 
 from core.test_history_repository import TestHistoryRepository
 
@@ -350,7 +350,18 @@ class TestResultWidget(QWidget):
         cursor.movePosition(QTextCursor.End)
         
         format = QTextCharFormat()
-        format.setForeground(color)
+        
+        # 检测是否为暗黑主题
+        is_dark_theme = self._is_dark_theme()
+        
+        # 根据主题调整颜色亮度
+        if is_dark_theme:
+            # 暗黑主题下提高颜色亮度
+            adjusted_color = self._adjust_color_for_dark_theme(color)
+            format.setForeground(adjusted_color)
+        else:
+            format.setForeground(color)
+        
         cursor.insertText(text, format)
         
         self.result_text.setTextCursor(cursor)
@@ -746,3 +757,45 @@ class TestResultWidget(QWidget):
         
         # 切换到当前结果标签页
         self.tabs.setCurrentIndex(0)
+    
+    def _is_dark_theme(self):
+        """
+        检测是否为暗黑主题
+        
+        Returns:
+            bool: 如果是暗黑主题返回True
+        """
+        # 通过背景颜色的亮度来判断
+        palette = QApplication.palette()
+        background_color = palette.color(QPalette.Window)
+        
+        # 计算亮度 (0-255)
+        brightness = (background_color.red() * 299 + 
+                     background_color.green() * 587 + 
+                     background_color.blue() * 114) / 1000
+        
+        # 如果亮度小于128，认为是暗黑主题
+        return brightness < 128
+    
+    def _adjust_color_for_dark_theme(self, color):
+        """
+        为暗黑主题调整颜色亮度
+        
+        Args:
+            color (QColor): 原始颜色
+            
+        Returns:
+            QColor: 调整后的颜色
+        """
+        # 获取HSL值
+        h, s, l, a = color.getHsl()
+        
+        # 如果颜色太暗，提高亮度
+        if l < 150:  # 亮度范围是0-255
+            # 提高亮度，但不要超过某个阈值以保持颜色特征
+            new_l = min(l + 80, 220)
+            new_color = QColor()
+            new_color.setHsl(h, s, new_l, a)
+            return new_color
+        
+        return color
