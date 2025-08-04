@@ -1,9 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 # 收集数据文件
 datas = []
+
+# 收集PyQt5相关数据
+try:
+    pyqt5_datas, pyqt5_binaries, pyqt5_hiddenimports = collect_all('PyQt5')
+    datas += pyqt5_datas
+except:
+    pass
 
 # 添加模板文件
 if os.path.exists('templates'):
@@ -20,14 +30,22 @@ if os.path.exists('assets'):
 # 收集必要的隐藏导入
 hiddenimports = [
     # PyQt5 核心模块
+    'PyQt5',
     'PyQt5.QtCore',
-    'PyQt5.QtGui', 
+    'PyQt5.QtGui',
     'PyQt5.QtWidgets',
     'PyQt5.QtNetwork',
+    'PyQt5.sip',
+    'sip',
     # 应用依赖
     'requests',
     'json',
     'yaml',
+    'jsonschema',
+    'swagger_parser',
+    'faker',
+    'dateutil',
+    'urllib3',
     'sqlite3',
     'threading',
     'queue',
@@ -35,36 +53,64 @@ hiddenimports = [
     'base64',
     'secrets',
     'chardet',
-    'urllib3',
+    'psutil',
+    'tqdm',
+    'bcrypt',
+    'keyring',
+    # 加密相关
+    'cryptography',
+    'cryptography.fernet',
+    'cryptography.hazmat',
+    'cryptography.hazmat.primitives',
+    'cryptography.hazmat.primitives.kdf',
+    'cryptography.hazmat.primitives.kdf.pbkdf2',
+    'cryptography.hazmat.primitives.hashes',
+    'cryptography.hazmat.backends',
+    'cryptography.hazmat.backends.openssl',
 ]
 
+# 收集所有子模块
+hiddenimports += collect_submodules('core')
+hiddenimports += collect_submodules('gui')
+hiddenimports += collect_submodules('utils')
+
+# 添加从 collect_all 获取的 PyQt5 隐藏导入
+try:
+    hiddenimports += pyqt5_hiddenimports
+except:
+    pass
+
 block_cipher = None
+
+# 收集二进制文件
+binaries = []
+try:
+    binaries += pyqt5_binaries
+except:
+    pass
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=['hooks'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 排除不需要的包
+        # 排除不需要的包（但保留必要的依赖）
         'torch',
-        'numpy',
-        'pandas',
         'matplotlib',
         'scipy',
         'transformers',
-        'tensorboard', 
+        'tensorboard',
         'sklearn',
         'IPython',
         'jupyter',
         'notebook',
         'sympy',
         'cv2',
-        'PIL',
         'tkinter',
     ],
     win_no_prefer_redirects=False,

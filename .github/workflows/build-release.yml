@@ -30,10 +30,13 @@ jobs:
           pip install pyinstaller pillow
           # 确保 PyQt5 正确安装
           pip install --force-reinstall PyQt5==5.15.9
-          # 验证 PyQt5 安装
-          python -c "import PyQt5.QtCore; print('PyQt5 installed successfully')"
           # 安装 PyInstaller hooks
           pip install pyinstaller-hooks-contrib
+          # 验证 PyQt5 安装
+          python -c "import PyQt5.QtCore; print('PyQt5.QtCore imported successfully')"
+          python -c "import PyQt5.QtWidgets; print('PyQt5.QtWidgets imported successfully')"
+          python -c "import PyQt5.QtGui; print('PyQt5.QtGui imported successfully')"
+          python -c "import PyQt5.sip; print('PyQt5.sip imported successfully')" || echo "PyQt5.sip not available, using fallback"
         
     - name: Create icon
       run: |
@@ -44,7 +47,15 @@ jobs:
     - name: Build executable
       run: |
         pyinstaller build_simple.spec --clean
-        
+
+    - name: Verify build
+      run: |
+        echo "Checking build output..."
+        dir dist/SwaggerAPITester/
+        echo "Checking for PyQt5 files..."
+        dir dist/SwaggerAPITester/ | findstr /i "qt" || echo "No Qt files found in main directory"
+        dir dist/SwaggerAPITester/_internal/ | findstr /i "qt" || echo "No Qt files found in _internal directory"
+
     - name: Create release archive
       run: |
         cd dist
