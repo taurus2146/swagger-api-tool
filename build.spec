@@ -3,9 +3,17 @@
 import os
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 # 收集数据文件
 datas = []
+
+# 收集PyQt5相关数据
+try:
+    pyqt5_datas, pyqt5_binaries, pyqt5_hiddenimports = collect_all('PyQt5')
+    datas += pyqt5_datas
+except:
+    pass
 
 # 添加模板文件
 if os.path.exists('templates'):
@@ -101,7 +109,7 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=['hooks'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],

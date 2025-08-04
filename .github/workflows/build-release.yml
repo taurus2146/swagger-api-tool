@@ -23,11 +23,17 @@ jobs:
       with:
         python-version: '3.9'
         
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller pillow
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+          # 确保 PyQt5 正确安装
+          pip install --force-reinstall PyQt5==5.15.9
+          # 验证 PyQt5 安装
+          python -c "import PyQt5.QtCore; print('PyQt5 installed successfully')"
+          # 安装 PyInstaller hooks
+          pip install pyinstaller-hooks-contrib
         
     - name: Create icon
       run: |
