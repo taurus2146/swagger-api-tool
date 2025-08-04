@@ -50,11 +50,12 @@ jobs:
 
     - name: Verify build
       run: |
-        echo "Checking build output..."
+        echo "Running automated build verification..."
+        python scripts/verify_pyqt5_build.py
+        echo "Checking build output structure..."
         dir dist/SwaggerAPITester/
         echo "Checking for PyQt5 files..."
-        dir dist/SwaggerAPITester/ | findstr /i "qt" || echo "No Qt files found in main directory"
-        dir dist/SwaggerAPITester/_internal/ | findstr /i "qt" || echo "No Qt files found in _internal directory"
+        dir dist/SwaggerAPITester/_internal/ | findstr /i "pyqt" || echo "No PyQt files found"
 
     - name: Create release archive
       run: |

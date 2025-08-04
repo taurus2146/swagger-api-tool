@@ -12,8 +12,10 @@ datas = []
 try:
     pyqt5_datas, pyqt5_binaries, pyqt5_hiddenimports = collect_all('PyQt5')
     datas += pyqt5_datas
-except:
-    pass
+    print(f"SUCCESS: Collected {len(pyqt5_datas)} PyQt5 data files")
+except Exception as e:
+    print(f"WARNING: Cannot collect PyQt5 data files: {e}")
+    pyqt5_datas, pyqt5_binaries, pyqt5_hiddenimports = [], [], []
 
 # 添加模板文件
 if os.path.exists('templates'):
@@ -77,8 +79,9 @@ hiddenimports += collect_submodules('utils')
 # 添加从 collect_all 获取的 PyQt5 隐藏导入
 try:
     hiddenimports += pyqt5_hiddenimports
-except:
-    pass
+    print(f"SUCCESS: Added {len(pyqt5_hiddenimports)} PyQt5 hidden imports")
+except Exception as e:
+    print(f"WARNING: Cannot add PyQt5 hidden imports: {e}")
 
 block_cipher = None
 
@@ -86,8 +89,9 @@ block_cipher = None
 binaries = []
 try:
     binaries += pyqt5_binaries
-except:
-    pass
+    print(f"SUCCESS: Added {len(pyqt5_binaries)} PyQt5 binary files")
+except Exception as e:
+    print(f"WARNING: Cannot add PyQt5 binary files: {e}")
 
 a = Analysis(
     ['main.py'],
