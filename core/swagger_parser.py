@@ -171,10 +171,18 @@ class SwaggerParser:
         cached_data = self.cache_manager.get_cached_swagger_data(self.project_id)
         if cached_data:
             self.swagger_data = cached_data
+            logger.info(f"从缓存加载的数据类型: {type(cached_data)}")
+            logger.info(f"从缓存加载的数据大小: {len(str(cached_data))}")
 
             # 创建数据生成器并设置Swagger数据
             from core.data_generator import DataGenerator
             self.data_generator = DataGenerator(self.swagger_data)
+
+            # 验证数据生成器是否正确设置了swagger_data
+            if self.data_generator.swagger_data:
+                logger.info("DataGenerator已正确设置swagger_data")
+            else:
+                logger.error("DataGenerator的swagger_data为空！")
 
             # 解析API列表
             self._parse_apis()

@@ -105,16 +105,39 @@ class AuthManager:
     def get_auth_config(self, auth_type=None):
         """
         获取认证配置
-        
+
         Args:
             auth_type (str, optional): 认证类型，如果为None则返回所有配置
-            
+
         Returns:
             dict: 认证配置信息
         """
         if auth_type:
             return self.auth_config.get(auth_type, {})
         return self.auth_config
+
+    def set_config(self, config: dict):
+        """
+        设置完整的认证配置（用于项目级别的配置）
+
+        Args:
+            config (dict): 完整的认证配置字典
+        """
+        if config and isinstance(config, dict):
+            # 更新内存中的配置
+            self.auth_config.update(config)
+            logger.info(f"已加载项目认证配置，包含认证类型: {list(config.keys())}")
+        else:
+            logger.warning("项目认证配置为空或格式不正确")
+
+    def get_config(self):
+        """
+        获取完整的认证配置
+
+        Returns:
+            dict: 完整的认证配置字典
+        """
+        return self.auth_config.copy()
         
     def login(self, auth_type="bearer"):
         """

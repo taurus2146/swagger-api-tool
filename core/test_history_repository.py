@@ -30,13 +30,15 @@ class TestHistoryRepository:
     @contextmanager
     def _get_cursor(self):
         """获取数据库游标的上下文管理器"""
-        if not self.db_manager._is_connected:
-            raise RuntimeError("数据库未连接")
-        cursor = self.db_manager._connection.cursor()
-        try:
-            yield cursor
-        finally:
-            cursor.close()
+        if not self.db_manager.connection_manager:
+            raise RuntimeError("数据库连接管理器未初始化")
+
+        with self.db_manager.connection_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                yield cursor
+            finally:
+                cursor.close()
     
     def add_test_history(self, project_id: str, test_result: Dict[str, Any]) -> Optional[int]:
         """
@@ -90,12 +92,11 @@ class TestHistoryRepository:
                     test_result.get('auth_type')
                 ))
                 
-                self.db_manager._connection.commit()
+                # 提交事务（在上下文管理器中自动处理）
                 return cursor.lastrowid
-                
+
         except Exception as e:
             logger.error(f"添加测试历史失败: {e}")
-            self.db_manager._connection.rollback()
             return None
     
     def get_test_history(self, project_id: str = None, limit: int = 500) -> List[Dict[str, Any]]:
@@ -187,13 +188,12 @@ class TestHistoryRepository:
                 else:
                     cursor.execute('DELETE FROM test_history')
                 
-                self.db_manager._connection.commit()
+                # 提交事务（在上下文管理器中自动处理）
                 logger.info(f"清空测试历史成功，删除了 {cursor.rowcount} 条记录")
                 return True
-                
+
         except Exception as e:
             logger.error(f"清空测试历史失败: {e}")
-            self.db_manager._connection.rollback()
             return False
     
     def get_test_statistics(self, project_id: str) -> Dict[str, Any]:

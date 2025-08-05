@@ -22,13 +22,25 @@ class DataGenerator:
     def __init__(self, swagger_data=None):
         """
         初始化数据生成器
-        
+
         Args:
             swagger_data (dict, optional): Swagger文档数据，用于解析引用
         """
         self.swagger_data = swagger_data
         self.cache = {}  # 缓存已解析的引用
         self.is_generating_request_body = False  # 标记是否正在生成请求体
+        self.recursion_depth = 0  # 递归深度计数器
+        self.max_recursion_depth = 10  # 最大递归深度
+        self.generating_schemas = set()  # 正在生成的schema，防止循环引用
+
+        # 调试信息
+        if swagger_data:
+            print(f"DataGenerator初始化: swagger_data类型={type(swagger_data)}, 大小={len(str(swagger_data))}")
+            if isinstance(swagger_data, dict):
+                print(f"DataGenerator初始化: 包含definitions={bool(swagger_data.get('definitions'))}")
+                print(f"DataGenerator初始化: 包含components={bool(swagger_data.get('components'))}")
+        else:
+            print("DataGenerator初始化: swagger_data为空")
     
     def set_swagger_data(self, swagger_data):
         """
@@ -43,16 +55,55 @@ class DataGenerator:
     def generate_data(self, schema):
         """
         根据参数架构生成测试数据
-        
+
         Args:
             schema (dict): 参数架构
-            
+
         Returns:
             any: 生成的测试数据
         """
-        print(f"开始生成数据，schema: {json.dumps(schema, ensure_ascii=False)}")
-        if not schema:
-            return None
+        # 检查递归深度
+        if self.recursion_depth >= self.max_recursion_depth:
+            print(f"达到最大递归深度 {self.max_recursion_depth}，返回简单值")
+            return "递归深度限制"
+
+        # 增加递归深度
+        self.recursion_depth += 1
+
+        try:
+            print(f"开始生成数据，递归深度: {self.recursion_depth}, schema: {json.dumps(schema, ensure_ascii=False)}")
+            if not schema:
+                return None
+
+            # 检查循环引用
+            schema_key = json.dumps(schema, sort_keys=True) if isinstance(schema, dict) else str(schema)
+            if schema_key in self.generating_schemas:
+                print(f"检测到循环引用，返回简单值")
+                return "循环引用"
+
+            # 添加到正在生成的集合
+            self.generating_schemas.add(schema_key)
+
+            try:
+                return self._generate_data_internal(schema)
+            finally:
+                # 移除正在生成的标记
+                self.generating_schemas.discard(schema_key)
+
+        finally:
+            # 减少递归深度
+            self.recursion_depth -= 1
+
+    def _generate_data_internal(self, schema):
+        """
+        内部数据生成方法
+
+        Args:
+            schema (dict): 参数架构
+
+        Returns:
+            any: 生成的测试数据
+        """
         
         # 处理引用
         if isinstance(schema, dict) and '$ref' in schema:
@@ -65,21 +116,30 @@ class DataGenerator:
             
             # 解析引用
             if self.swagger_data:
-                resolved = self._resolve_reference(ref_path)
-                if resolved:
-                    print(f"解析引用成功: {ref_path}")
-                    generated = self._generate_example_object(resolved)
-                    # 缓存解析结果
-                    self.cache[ref_path] = generated
-                    return generated
-                else:
-                    print(f"解析引用失败: {ref_path}")
+                try:
+                    resolved = self._resolve_reference(ref_path)
+                    if resolved:
+                        print(f"解析引用成功: {ref_path}")
+                        generated = self._generate_example_object(resolved)
+                        # 缓存解析结果
+                        self.cache[ref_path] = generated
+                        return generated
+                    else:
+                        print(f"解析引用失败: {ref_path}")
+                except Exception as e:
+                    print(f"解析引用时出现异常: {e}")
             else:
                 print("无法解析引用: swagger_data为空")
+                # 尝试从引用路径推断数据类型
+                return self._generate_fallback_data_from_ref(ref_path)
             
             # 无法解析引用，返回示例对象
             print("生成默认示例对象")
-            return self._generate_example_object()
+            try:
+                return self._generate_example_object()
+            except Exception as e:
+                print(f"生成默认示例对象失败: {e}")
+                return {"error": "无法生成示例数据"}
         
         # 处理类型
         type_name = schema.get('type')
@@ -125,6 +185,61 @@ class DataGenerator:
         
         print(f"引用解析成功: {type(current)}")
         return current
+
+    def _generate_fallback_data_from_ref(self, ref_path):
+        """
+        当无法解析引用时，根据引用路径生成备用数据
+
+        Args:
+            ref_path (str): 引用路径
+
+        Returns:
+            dict: 备用数据
+        """
+        print(f"生成备用数据: {ref_path}")
+
+        # 从引用路径中提取可能的类型信息
+        path_lower = ref_path.lower()
+
+        if 'user' in path_lower or '用户' in path_lower:
+            return {
+                "id": random.randint(1, 1000),
+                "name": fake.name(),
+                "email": fake.email(),
+                "phone": fake.phone_number(),
+                "createTime": fake.date_time().isoformat()
+            }
+        elif 'order' in path_lower or '订单' in path_lower:
+            return {
+                "id": random.randint(1000, 9999),
+                "orderNo": f"ORD{random.randint(100000, 999999)}",
+                "amount": round(random.uniform(10, 1000), 2),
+                "status": random.choice(["pending", "paid", "shipped", "completed"]),
+                "createTime": fake.date_time().isoformat()
+            }
+        elif 'product' in path_lower or '产品' in path_lower or '商品' in path_lower:
+            return {
+                "id": random.randint(1, 500),
+                "name": fake.word(),
+                "price": round(random.uniform(1, 500), 2),
+                "category": fake.word(),
+                "inStock": random.choice([True, False])
+            }
+        elif 'request' in path_lower or '请求' in path_lower:
+            return {
+                "id": random.randint(1, 100),
+                "data": fake.text(max_nb_chars=50),
+                "timestamp": fake.date_time().isoformat()
+            }
+        else:
+            # 通用备用数据
+            return {
+                "id": random.randint(1, 1000),
+                "name": fake.word(),
+                "value": fake.text(max_nb_chars=30),
+                "timestamp": fake.date_time().isoformat(),
+                "active": random.choice([True, False])
+            }
     
     def _generate_example_object(self, schema=None):
         """
@@ -340,66 +455,107 @@ class DataGenerator:
     def _generate_array(self, schema):
         """
         生成数组类型数据
-        
+
         Args:
             schema (dict): 参数架构
-            
+
         Returns:
             list: 生成的数组
         """
         # 处理项目模式
         items_schema = schema.get('items', {})
-        
-        # 处理长度
+
+        # 处理长度，根据递归深度调整数组大小
         min_items = schema.get('minItems', 0)
         max_items = schema.get('maxItems', 5)
+
+        # 根据递归深度限制数组大小，防止过度递归
+        if self.recursion_depth > 5:
+            max_items = min(max_items, 2)  # 深层递归时限制数组大小
+        if self.recursion_depth > 8:
+            max_items = 1  # 更深层时只生成1个元素
+
         if min_items > max_items:
             min_items = max_items
-        
+
         # 生成随机长度数组
         count = random.randint(min_items, max_items)
-        return [self.generate_data(items_schema) for _ in range(count)]
+        result = []
+        for i in range(count):
+            try:
+                item = self.generate_data(items_schema)
+                result.append(item)
+            except Exception as e:
+                print(f"生成数组元素失败: {e}")
+                result.append(f"元素{i}")
+                break  # 出错时停止生成更多元素
+
+        return result
     
     def _generate_object(self, schema):
         """
         生成对象类型数据
-        
+
         Args:
             schema (dict): 参数架构
-            
+
         Returns:
             dict: 生成的对象
         """
         result = {}
-        
+
         # 处理属性
         properties = schema.get('properties', {})
         required = schema.get('required', [])
-        
+
+        # 根据递归深度限制生成的属性数量
+        if self.recursion_depth > 8:
+            # 深层递归时只生成必需属性
+            properties_to_generate = {k: v for k, v in properties.items() if k in required}
+            if not properties_to_generate and properties:
+                # 如果没有必需属性，至少生成一个
+                first_prop = next(iter(properties.items()))
+                properties_to_generate = {first_prop[0]: first_prop[1]}
+        elif self.recursion_depth > 5:
+            # 中等深度时限制属性数量
+            max_props = min(len(properties), 3)
+            prop_items = list(properties.items())
+            # 优先选择必需属性
+            required_props = [(k, v) for k, v in prop_items if k in required]
+            other_props = [(k, v) for k, v in prop_items if k not in required]
+            selected_props = required_props + other_props[:max_props - len(required_props)]
+            properties_to_generate = dict(selected_props[:max_props])
+        else:
+            properties_to_generate = properties
+
         # 判断是否需要生成所有字段
-        # 1. 如果正在生成请求体，生成所有字段
-        # 2. 如果对象有较多属性（>3个），通常是重要的业务对象，生成所有字段
-        # 3. 如果是顽级schema（title字段存在），通常也是重要对象
         should_generate_all = (
-            self.is_generating_request_body or 
-            len(properties) > 3 or 
+            self.is_generating_request_body or
+            len(properties_to_generate) > 3 or
             'title' in schema or
-            # 如果大部分字段都是必需的，那么剩下的也应该生成
-            (len(required) > 0 and len(required) / len(properties) > 0.5)
+            (len(required) > 0 and len(required) / len(properties_to_generate) > 0.5)
         )
-        
-        for prop_name, prop_schema in properties.items():
-            # 必需属性一定生成
-            if prop_name in required:
-                result[prop_name] = self.generate_data(prop_schema)
-            else:
-                # 根据上述条件判断是否生成
-                if should_generate_all:
+
+        for prop_name, prop_schema in properties_to_generate.items():
+            try:
+                # 必需属性一定生成
+                if prop_name in required:
                     result[prop_name] = self.generate_data(prop_schema)
-                # 对于其他对象，95%的概率生成非必需属性
-                elif random.random() > 0.05:
-                    result[prop_name] = self.generate_data(prop_schema)
-        
+                else:
+                    # 根据条件和递归深度判断是否生成
+                    if should_generate_all:
+                        result[prop_name] = self.generate_data(prop_schema)
+                    # 深层递归时降低生成概率
+                    elif self.recursion_depth > 6:
+                        if random.random() > 0.7:  # 30%概率生成
+                            result[prop_name] = self.generate_data(prop_schema)
+                    # 对于其他对象，95%的概率生成非必需属性
+                    elif random.random() > 0.05:
+                        result[prop_name] = self.generate_data(prop_schema)
+            except Exception as e:
+                print(f"生成对象属性 {prop_name} 失败: {e}")
+                result[prop_name] = f"生成失败: {prop_name}"
+
         return result
     
     def generate_parameter_data(self, parameters):

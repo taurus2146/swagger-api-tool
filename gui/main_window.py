@@ -406,7 +406,25 @@ class MainWindow(QMainWindow):
         # 获取当前加载的API列表
         api_list = self.swagger_parser.get_api_list() if self.swagger_parser else []
         dlg = AuthConfigDialog(self.auth_manager, self, api_list)
-        dlg.exec_()
+        if dlg.exec_() == dlg.Accepted:
+            # 认证配置修改后，保存到当前项目
+            self._save_current_auth_to_project()
+
+    def _save_current_auth_to_project(self):
+        """保存当前认证配置到项目"""
+        current_project = self.project_manager.get_current_project()
+        if current_project:
+            # 获取当前的认证配置
+            current_auth_config = self.auth_manager.get_config()
+
+            # 更新项目的认证配置
+            current_project.auth_config = current_auth_config
+
+            # 保存项目
+            if self.project_manager.update_project(current_project):
+                logger.info(f"已保存认证配置到项目: {current_project.name}")
+            else:
+                logger.error(f"保存认证配置到项目失败: {current_project.name}")
         
     def _on_history_selected(self, test_result):
         """
@@ -445,6 +463,9 @@ class MainWindow(QMainWindow):
 
     def _load_project(self, project_id: str):
         """加载项目"""
+        # 在切换项目前，保存当前项目的认证配置
+        self._save_current_auth_to_project()
+
         project = self.project_manager.set_current_project(project_id)
         if project:
             self.current_project_label.setText(project.name)
@@ -494,6 +515,11 @@ class MainWindow(QMainWindow):
             # 恢复认证配置
             if project.auth_config:
                 self.auth_manager.set_config(project.auth_config)
+                logger.info(f"已加载项目认证配置: {list(project.auth_config.keys())}")
+            else:
+                # 如果项目没有认证配置，清空当前配置
+                self.auth_manager.set_config({})
+                logger.info("项目无认证配置，已清空当前认证配置")
 
             self._update_recent_projects_menu()
 
@@ -701,23 +727,58 @@ class MainWindow(QMainWindow):
                     
                     # 设置测试结果组件的项目ID
                     self.result_widget.set_project_id(project.id)
-                    
+
+                    # 设置SwaggerParser的项目ID以启用缓存
+                    self.swagger_parser.project_id = project.id
+
+                    # 更新URL输入框为Swagger文档地址
+                    if project.swagger_source.type == "url":
+                        # 如果是URL来源，显示Swagger文档URL
+                        self.url_input.setText(project.swagger_source.location)
+                    else:
+                        # 文件来源，清空URL输入框
+                        self.url_input.clear()
+
                     try:
-                        # 加载对应的Swagger文档
-                        if project.swagger_source.type == "url":
-                            self._load_from_url(project.swagger_source.location)
-                        else:
-                            self._load_from_file(project.swagger_source.location)
-                        
+                        # 优先尝试从缓存加载Swagger文档
+                        cache_loaded = False
+                        if self.swagger_parser.is_cache_available():
+                            self.status_label.setText("从缓存加载Swagger文档...")
+                            QApplication.processEvents()
+                            if self.swagger_parser.load_from_cache():
+                                cache_loaded = True
+                                # 使用项目的原始源信息，而不是"缓存"
+                                self._after_doc_loaded(
+                                    source_type=project.swagger_source.type,
+                                    location=project.swagger_source.location,
+                                    from_cache=True  # 添加标记表示来自缓存
+                                )
+                                logger.info("启动时从缓存成功加载Swagger文档")
+
+                        # 如果缓存加载失败，从原始源加载
+                        if not cache_loaded:
+                            if project.swagger_source.type == "url":
+                                self._load_from_url(project.swagger_source.location)
+                            else:
+                                self._load_from_file(project.swagger_source.location)
+
                         # 加载认证信息
                         if project.auth_config:
                             self.auth_manager.set_config(project.auth_config)
-                        
+                            logger.info(f"启动时已加载项目认证配置: {list(project.auth_config.keys())}")
+                        else:
+                            # 如果项目没有认证配置，清空当前配置
+                            self.auth_manager.set_config({})
+                            logger.info("启动时项目无认证配置，已清空当前认证配置")
+
                         # 更新最近使用项目菜单
                         self._update_recent_projects_menu()
-                        
-                        self.status_label.setText(f"已自动加载项目: {project.name}")
-                        
+
+                        if cache_loaded:
+                            self.status_label.setText(f"已从缓存加载项目: {project.name}")
+                        else:
+                            self.status_label.setText(f"已自动加载项目: {project.name}")
+
                     except Exception as e:
                         logger.error(f"恢复项目时出错: {e}", exc_info=True)
                         self.status_label.setText(f"项目恢复失败: {str(e)}")

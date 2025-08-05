@@ -247,19 +247,22 @@ class ApiParamEditor(QWidget):
         self.api_method.setProperty("method", method.upper())  # 设置属性以应用HTTP方法颜色
         self.api_description.setText(self.api_info.get('description', self.api_info.get('summary', '')))
         
-        # 根据HTTP方法确定是否显示请求体标签页
-        # GET、DELETE、HEAD、OPTIONS方法通常不使用请求体
-        no_body_methods = ['get', 'delete', 'head', 'options']
-        if method.lower() in no_body_methods:
-            # 隐藏请求体标签页
-            body_tab_index = self.param_tabs.indexOf(self.body_param_tab)
-            if body_tab_index != -1:
-                self.param_tabs.removeTab(body_tab_index)
-        else:
+        # 根据Swagger文档中是否定义了请求体来决定是否显示请求体标签页
+        request_body = self.api_info.get('requestBody')
+        has_request_body = request_body is not None
+
+        # 对于某些方法，即使没有在Swagger中定义请求体，也可能需要支持
+        # 但我们主要根据Swagger文档的定义来决定
+        if has_request_body:
             # 确保请求体标签页可见
             body_tab_index = self.param_tabs.indexOf(self.body_param_tab)
             if body_tab_index == -1:
                 self.param_tabs.addTab(self.body_param_tab, "请求体")
+        else:
+            # 如果Swagger文档中没有定义请求体，隐藏请求体标签页
+            body_tab_index = self.param_tabs.indexOf(self.body_param_tab)
+            if body_tab_index != -1:
+                self.param_tabs.removeTab(body_tab_index)
         
         # 清空参数控件
         self.clear_param_widgets()
@@ -441,7 +444,19 @@ class ApiParamEditor(QWidget):
             param_description = param.get('description', '')
             
             # 生成参数值
-            generated_value = self.data_generator.generate_data(param_schema)
+            try:
+                generated_value = self.data_generator.generate_data(param_schema)
+            except Exception as e:
+                logger.error(f"生成参数数据失败: {e}")
+                # 提供备用值
+                if param_schema.get('type') == 'integer':
+                    generated_value = 1
+                elif param_schema.get('type') == 'number':
+                    generated_value = 1.0
+                elif param_schema.get('type') == 'boolean':
+                    generated_value = True
+                else:
+                    generated_value = "示例值"
             
             # 对于分页相关的参数，设置默认值
             if param_in == 'query':
@@ -466,11 +481,8 @@ class ApiParamEditor(QWidget):
                 # 跳过预定义请求头，这些应该在认证配置中处理
                 pass
         
-        # 检查方法是否通常不使用请求体
-        no_body_methods = ['get', 'delete', 'head', 'options']
-        
-        # 处理请求体 - 只有当API方法通常支持请求体时才处理
-        if request_body and method not in no_body_methods:
+        # 处理请求体 - 根据Swagger文档中是否定义了请求体来决定
+        if request_body:
             content = request_body.get('content', {})
             
             # 处理JSON请求体
@@ -479,8 +491,14 @@ class ApiParamEditor(QWidget):
                 if content_type == 'application/json' and json_schema:
                     # 设置正在生成请求体的标记
                     self.data_generator.is_generating_request_body = True
-                    generated_body = self.data_generator.generate_data(json_schema)
-                    self.data_generator.is_generating_request_body = False
+                    try:
+                        generated_body = self.data_generator.generate_data(json_schema)
+                    except Exception as e:
+                        logger.error(f"生成请求体数据失败: {e}")
+                        # 提供备用的请求体数据
+                        generated_body = {"error": "无法生成示例数据", "message": str(e)}
+                    finally:
+                        self.data_generator.is_generating_request_body = False
                     
                     if isinstance(generated_body, (dict, list)):
                         self.json_editor.setText(json.dumps(generated_body, ensure_ascii=False, indent=2))
@@ -700,12 +718,9 @@ class ApiParamEditor(QWidget):
         # 获取自定义请求头
         result['headers'] = self.get_custom_headers()
 
-        # 检查方法是否通常不使用请求体
-        method = self.api_info.get('method', '').lower() if self.api_info else 'get'
-        no_body_methods = ['get', 'delete', 'head', 'options']
-
-        # 仅当方法支持请求体且请求体标签页可见时才获取请求体内容
-        if method not in no_body_methods and self.param_tabs.indexOf(self.body_param_tab) != -1:
+        # 检查是否有请求体标签页可见（表示API支持请求体）
+        # 仅当请求体标签页可见时才获取请求体内容
+        if self.param_tabs.indexOf(self.body_param_tab) != -1:
             logger.debug(f"API方法: {method}, 请求体类型: JSON")
             try:
                 json_text = self.json_editor.toPlainText()

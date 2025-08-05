@@ -193,7 +193,8 @@ class ApiTester:
             body_data = request_data.get('body')
             logger.debug(f"请求体数据: {body_data}, 类型: {type(body_data)}")
 
-            if body_data is not None and method in ['POST', 'PUT', 'PATCH']:
+            # 支持所有可能有请求体的方法，包括DELETE
+            if body_data is not None and method in ['POST', 'PUT', 'PATCH', 'DELETE']:
                 if isinstance(body_data, dict):
                     request_kwargs['json'] = body_data
                     logger.debug(f"设置JSON请求体: {body_data}")
@@ -205,7 +206,7 @@ class ApiTester:
                     logger.debug(f"设置其他类型请求体: {body_data}")
 
             # 设置请求头的Content-Type
-            if method in ['POST', 'PUT', 'PATCH'] and isinstance(body_data, dict):
+            if method in ['POST', 'PUT', 'PATCH', 'DELETE'] and isinstance(body_data, dict):
                 request_kwargs['headers'].setdefault('Content-Type', 'application/json')
                 logger.debug("设置Content-Type为application/json")
             
