@@ -13,7 +13,7 @@ class DatabaseSchema:
     """数据库模式类"""
     
     # 当前模式版本
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     
     # 表创建SQL语句
     TABLES: Dict[str, str] = {
@@ -121,6 +121,55 @@ class DatabaseSchema:
                 auth_type TEXT,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
+        ''',
+
+        'swagger_documents': '''
+            CREATE TABLE IF NOT EXISTS swagger_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL,
+                content TEXT NOT NULL,  -- 完整的Swagger文档内容（JSON/YAML）
+                content_hash TEXT NOT NULL,  -- 内容哈希值，用于检测变化
+                version TEXT,  -- Swagger文档版本（从info.version字段）
+                title TEXT,  -- API标题（从info.title字段）
+                description TEXT,  -- API描述（从info.description字段）
+                base_path TEXT,  -- API基础路径
+                host TEXT,  -- API主机
+                schemes TEXT,  -- 支持的协议（JSON数组）
+                consumes TEXT,  -- 支持的请求媒体类型（JSON数组）
+                produces TEXT,  -- 支持的响应媒体类型（JSON数组）
+                api_count INTEGER DEFAULT 0,  -- API数量
+                cached_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME,  -- 缓存过期时间
+                is_current BOOLEAN DEFAULT 1,  -- 是否为当前版本
+                source_url TEXT,  -- 原始URL（如果从URL加载）
+                source_etag TEXT,  -- HTTP ETag（用于缓存验证）
+                source_last_modified DATETIME,  -- 源文档最后修改时间
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        ''',
+
+        'swagger_apis': '''
+            CREATE TABLE IF NOT EXISTS swagger_apis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL,
+                project_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS')),
+                operation_id TEXT,  -- operationId字段
+                summary TEXT,  -- API摘要
+                description TEXT,  -- API详细描述
+                tags TEXT,  -- 标签（JSON数组）
+                parameters TEXT,  -- 参数定义（JSON）
+                request_body TEXT,  -- 请求体定义（JSON）
+                responses TEXT,  -- 响应定义（JSON）
+                security TEXT,  -- 安全要求（JSON）
+                deprecated BOOLEAN DEFAULT 0,  -- 是否已废弃
+                external_docs TEXT,  -- 外部文档（JSON）
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES swagger_documents(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                UNIQUE(document_id, path, method)
+            )
         '''
     }
     
@@ -160,7 +209,21 @@ class DatabaseSchema:
         'CREATE INDEX IF NOT EXISTS idx_test_history_api_path ON test_history(api_path)',
         'CREATE INDEX IF NOT EXISTS idx_test_history_method ON test_history(method)',
         'CREATE INDEX IF NOT EXISTS idx_test_history_status_code ON test_history(status_code)',
-        'CREATE INDEX IF NOT EXISTS idx_test_history_project_api ON test_history(project_id, api_path, method)'
+        'CREATE INDEX IF NOT EXISTS idx_test_history_project_api ON test_history(project_id, api_path, method)',
+
+        # swagger_documents表索引
+        'CREATE INDEX IF NOT EXISTS idx_swagger_documents_project_id ON swagger_documents(project_id)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_documents_hash ON swagger_documents(content_hash)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_documents_current ON swagger_documents(project_id, is_current)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_documents_cached_at ON swagger_documents(cached_at)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_documents_expires_at ON swagger_documents(expires_at)',
+
+        # swagger_apis表索引
+        'CREATE INDEX IF NOT EXISTS idx_swagger_apis_document_id ON swagger_apis(document_id)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_apis_project_id ON swagger_apis(project_id)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_apis_path_method ON swagger_apis(path, method)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_apis_tags ON swagger_apis(tags)',
+        'CREATE INDEX IF NOT EXISTS idx_swagger_apis_operation_id ON swagger_apis(operation_id)'
     ]
     
     # 触发器创建SQL语句

@@ -11,6 +11,9 @@ import os
 import yaml
 import requests
 from urllib.parse import urlparse
+from typing import Optional
+
+from .swagger_cache_manager import SwaggerCacheManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,27 +21,42 @@ logger = logging.getLogger(__name__)
 class SwaggerParser:
     """Swagger文档解析器，用于解析Swagger文档并提取API信息"""
 
-    def __init__(self):
+    def __init__(self, project_id: Optional[str] = None, db_manager=None):
         """初始化解析器"""
         self.swagger_data = None
         self.api_list = []
         self.base_url = ""
         self.data_generator = None  # 数据生成器实例
+        self.project_id = project_id
+        self.cache_manager = SwaggerCacheManager(db_manager) if db_manager else None
 
-    def load_from_url(self, url):
+    def load_from_url(self, url, force_refresh=False):
         """
         从URL加载Swagger文档
-        
+
         Args:
             url (str): Swagger文档的URL
-            
+            force_refresh (bool): 是否强制刷新，跳过缓存
+
         Returns:
             bool: 是否成功加载
         """
+        # 如果不是强制刷新，首先尝试从缓存加载
+        if not force_refresh and self.cache_manager and self.project_id:
+            cached_data = self.cache_manager.get_cached_swagger_data(self.project_id)
+            if cached_data:
+                logger.info("从缓存加载Swagger文档")
+                self.swagger_data = cached_data
+                self._setup_after_load(url)
+                return True
+
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            
+
+            # 获取ETag用于缓存验证
+            etag = response.headers.get('ETag')
+
             # 尝试解析JSON
             try:
                 self.swagger_data = response.json()
@@ -50,31 +68,41 @@ class SwaggerParser:
                     logger.error(f"解析YAML格式失败: {e}")
                     return False
             
-            # 设置基本URL - 从URL中提取，但移除swagger.json等文档文件名
-            parsed_url = urlparse(url)
-            # 如果URL路径以swagger文档文件结尾，则移除文件名部分
-            path = parsed_url.path
-            if path.endswith(('.json', '.yaml', '.yml')):
-                # 移除文件名，保留路径
-                path = '/'.join(path.split('/')[:-1])
-            # 确保路径以/结尾
-            if path and not path.endswith('/'):
-                path += '/'
-            elif not path:
-                path = '/'
-            self.base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{path}"
-            
-            # 创建数据生成器并设置Swagger数据
-            from core.data_generator import DataGenerator
-            self.data_generator = DataGenerator(self.swagger_data)
-            
-            # 解析API列表
-            self._parse_apis()
+            # 保存到缓存
+            if self.cache_manager and self.project_id:
+                self.cache_manager.save_swagger_document(
+                    self.project_id, response.text, self.swagger_data, url, etag
+                )
+
+            self._setup_after_load(url)
             return True
             
         except requests.RequestException as e:
             logger.error(f"从URL加载Swagger文档失败: {e}")
             return False
+
+    def _setup_after_load(self, source_url: str):
+        """加载后的设置工作"""
+        # 设置基本URL - 从URL中提取，但移除swagger.json等文档文件名
+        parsed_url = urlparse(source_url)
+        # 如果URL路径以swagger文档文件结尾，则移除文件名部分
+        path = parsed_url.path
+        if path.endswith(('.json', '.yaml', '.yml')):
+            # 移除文件名，保留路径
+            path = '/'.join(path.split('/')[:-1])
+        # 确保路径以/结尾
+        if path and not path.endswith('/'):
+            path += '/'
+        elif not path:
+            path = '/'
+        self.base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{path}"
+
+        # 创建数据生成器并设置Swagger数据
+        from core.data_generator import DataGenerator
+        self.data_generator = DataGenerator(self.swagger_data)
+
+        # 解析API列表
+        self._parse_apis()
 
     def load_from_file(self, file_path):
         """
@@ -112,10 +140,16 @@ class SwaggerParser:
                         logger.error(f"无法解析文件: {e}")
                         return False
             
+            # 保存到缓存
+            if self.cache_manager and self.project_id:
+                self.cache_manager.save_swagger_document(
+                    self.project_id, file_content, self.swagger_data
+                )
+
             # 创建数据生成器并设置Swagger数据
             from core.data_generator import DataGenerator
             self.data_generator = DataGenerator(self.swagger_data)
-            
+
             # 解析API列表
             self._parse_apis()
             return True
@@ -123,6 +157,45 @@ class SwaggerParser:
         except Exception as e:
             logger.error(f"从文件加载Swagger文档失败: {e}")
             return False
+
+    def load_from_cache(self) -> bool:
+        """
+        从缓存加载Swagger文档
+
+        Returns:
+            bool: 是否成功加载
+        """
+        if not self.cache_manager or not self.project_id:
+            return False
+
+        cached_data = self.cache_manager.get_cached_swagger_data(self.project_id)
+        if cached_data:
+            self.swagger_data = cached_data
+
+            # 创建数据生成器并设置Swagger数据
+            from core.data_generator import DataGenerator
+            self.data_generator = DataGenerator(self.swagger_data)
+
+            # 解析API列表
+            self._parse_apis()
+
+            logger.info("从缓存成功加载Swagger文档")
+            return True
+
+        return False
+
+    def is_cache_available(self) -> bool:
+        """
+        检查是否有可用的缓存
+
+        Returns:
+            bool: 是否有可用缓存
+        """
+        if not self.cache_manager or not self.project_id:
+            return False
+
+        document = self.cache_manager.get_current_document(self.project_id)
+        return document is not None and not self.cache_manager.is_document_expired(document)
 
     def _parse_apis(self):
         """

@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QFileDialog, QSplitter, QTabWidget, QStatusBar, QAction, QMessageBox, QInputDialog, QMenu
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtGui import QCursor
 
 from core.swagger_parser import SwaggerParser
@@ -46,10 +46,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(get_app_icon())
 
         # 核心对象
-        self.swagger_parser = SwaggerParser()
+        self.project_manager = ProjectManager()
+        self.swagger_parser = SwaggerParser(db_manager=self.project_manager.db_manager)
         self.auth_manager = AuthManager()
         self.api_tester = ApiTester(auth_manager=self.auth_manager)
-        self.project_manager = ProjectManager()
         
         # 确保数据生成器可以访问Swagger数据
         self.param_editor = None  # 将在_build_ui中初始化
@@ -100,6 +100,12 @@ class MainWindow(QMainWindow):
         btn_load_url = QPushButton("加载URL")
         btn_load_url.clicked.connect(lambda: self._load_from_url())
         top_layout.addWidget(btn_load_url)
+
+        btn_force_refresh = QPushButton("强制刷新")
+        btn_force_refresh.clicked.connect(lambda: self._force_refresh_from_url())
+        btn_force_refresh.setToolTip("跳过缓存，直接从URL重新加载最新文档")
+        btn_force_refresh.setStyleSheet("QPushButton { color: #ff6b35; font-weight: bold; }")
+        top_layout.addWidget(btn_force_refresh)
 
         btn_load_file = QPushButton("加载文件")
         btn_load_file.clicked.connect(lambda: self._load_from_file())
@@ -162,7 +168,10 @@ class MainWindow(QMainWindow):
 
         # 菜单
         self._build_menu()
-        
+
+        # 设置快捷键
+        self._setup_shortcuts()
+
         # 连接重新发送信号
         self.result_widget.resend_requested.connect(self._resend_request)
 
@@ -203,6 +212,19 @@ class MainWindow(QMainWindow):
         theme_menu.addSeparator()
         self._build_theme_menu(theme_menu)
 
+    def _setup_shortcuts(self):
+        """设置快捷键"""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+
+        # F5: 普通加载（缓存优先）
+        refresh_shortcut = QShortcut(QKeySequence("F5"), self)
+        refresh_shortcut.activated.connect(lambda: self._load_from_url())
+
+        # Ctrl+F5: 强制刷新
+        force_refresh_shortcut = QShortcut(QKeySequence("Ctrl+F5"), self)
+        force_refresh_shortcut.activated.connect(lambda: self._force_refresh_from_url())
+
     # ------------------------- Swagger 加载 ------------------------- #
     def _load_from_url(self, url=None):
         if url is None:
@@ -218,6 +240,28 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", "加载失败，请检查网址或网络")
         self.status_label.setText("就绪")
 
+    def _force_refresh_from_url(self, url=None):
+        """强制刷新：跳过缓存，直接从URL加载最新文档"""
+        if url is None:
+            url = self.url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "提示", "请输入URL")
+            return
+
+        # 显示强制刷新状态
+        self.status_label.setText("🔄 强制刷新中，正在从URL获取最新文档...")
+        self.status_label.setStyleSheet("color: #ff6b35; font-weight: bold;")
+        QApplication.processEvents()
+
+        # 强制从URL加载，跳过缓存
+        if self.swagger_parser.load_from_url(url, force_refresh=True):
+            self._after_doc_loaded(source_type="url", location=url, force_refreshed=True)
+            self.status_label.setStyleSheet("")  # 恢复默认样式
+        else:
+            QMessageBox.warning(self, "错误", "强制刷新失败，请检查网址或网络")
+            self.status_label.setStyleSheet("")  # 恢复默认样式
+            self.status_label.setText("就绪")
+
     def _load_from_file(self, file_path=None):
         if file_path is None:
             file_path, _ = QFileDialog.getOpenFileName(self, "选择Swagger文档", "", "Swagger 文件 (*.json *.yaml *.yml)")
@@ -231,14 +275,25 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", "文件格式不正确或无法读取")
         self.status_label.setText("就绪")
 
-    def _after_doc_loaded(self, source_type: str, location: str):
+    def _after_doc_loaded(self, source_type: str, location: str, from_cache: bool = False, force_refreshed: bool = False):
         apis = self.swagger_parser.get_api_list()
         self.api_list_widget.set_api_list(apis)
+
+        # 显示加载状态
+        if force_refreshed:
+            self.status_label.setText(f"✅ 强制刷新完成，已加载 {len(apis)} 个API")
+            self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
+            # 3秒后恢复默认样式
+            QTimer.singleShot(3000, lambda: self.status_label.setStyleSheet(""))
+        elif from_cache:
+            self.status_label.setText(f"已从缓存加载 {len(apis)} 个API")
+        else:
+            self.status_label.setText(f"已加载 {len(apis)} 个API")
         
         # 检查是否需要提示保存为项目
         current_project = self.project_manager.get_current_project()
         should_prompt_save = False
-        
+
         # 优先使用项目的基础URL，如果项目没有设置基础URL，则使用Swagger文档的基础URL
         if current_project and current_project.base_url:
             # 使用项目设置的基础URL
@@ -249,26 +304,28 @@ class MainWindow(QMainWindow):
             swagger_base_url = self.swagger_parser.get_base_url()
             self.api_tester.set_base_url(swagger_base_url)
             logger.info(f"使用Swagger文档基础URL: {swagger_base_url}")
-        
+
         if hasattr(self.api_list_widget, 'common_prefix'):
             self.param_editor.set_common_prefix(self.api_list_widget.common_prefix)
-        
+
         self.status_label.setText(f"已加载 {len(apis)} 个接口")
-        
+
         if not current_project:
-            # 没有当前项目，提示保存
-            should_prompt_save = True
+            # 没有当前项目，提示保存（但不包括从缓存加载的情况）
+            if not from_cache:
+                should_prompt_save = True
         else:
             # 有当前项目，检查加载的源是否与当前项目匹配
-            if (current_project.swagger_source.type != source_type or 
+            if (current_project.swagger_source.type != source_type or
                 current_project.swagger_source.location != location):
-                # 加载的源与当前项目不匹配，提示保存为新项目
-                should_prompt_save = True
+                # 加载的源与当前项目不匹配，提示保存为新项目（但不包括从缓存加载的情况）
+                if not from_cache:
+                    should_prompt_save = True
             else:
                 # 匹配当前项目，更新API数量
                 current_project.api_count = len(apis)
                 self.project_manager.update_project(current_project)
-        
+
         # 提示保存为项目
         if should_prompt_save:
             self._prompt_save_as_project(source_type, location)
@@ -392,10 +449,13 @@ class MainWindow(QMainWindow):
         if project:
             self.current_project_label.setText(project.name)
             self.setWindowTitle(f"Swagger API测试工具 - {project.name}")
-            
+
             # 设置测试结果组件的项目ID
             self.result_widget.set_project_id(project_id)
-            
+
+            # 设置SwaggerParser的项目ID以启用缓存
+            self.swagger_parser.project_id = project_id
+
             # 更新URL输入框为Swagger文档地址
             if project.swagger_source.type == "url":
                 # 如果是URL来源，显示Swagger文档URL
@@ -403,22 +463,38 @@ class MainWindow(QMainWindow):
             else:
                 # 文件来源，清空URL输入框
                 self.url_input.clear()
-            
+
             # 设置项目的基础URL（如果有的话）
             if project.base_url:
                 self.api_tester.set_base_url(project.base_url)
                 logger.info(f"加载项目时设置基础URL: {project.base_url}")
-            
-            # 加载Swagger文档
-            if project.swagger_source.type == "url":
-                self._load_from_url(project.swagger_source.location)
-            else:
-                self._load_from_file(project.swagger_source.location)
-            
+
+            # 优先尝试从缓存加载Swagger文档
+            cache_loaded = False
+            if self.swagger_parser.is_cache_available():
+                self.status_label.setText("从缓存加载Swagger文档...")
+                QApplication.processEvents()
+                if self.swagger_parser.load_from_cache():
+                    cache_loaded = True
+                    # 使用项目的原始源信息，而不是"缓存"
+                    self._after_doc_loaded(
+                        source_type=project.swagger_source.type,
+                        location=project.swagger_source.location,
+                        from_cache=True  # 添加标记表示来自缓存
+                    )
+                    logger.info("从缓存成功加载Swagger文档")
+
+            # 如果缓存加载失败，从原始源加载
+            if not cache_loaded:
+                if project.swagger_source.type == "url":
+                    self._load_from_url(project.swagger_source.location)
+                else:
+                    self._load_from_file(project.swagger_source.location)
+
             # 恢复认证配置
             if project.auth_config:
                 self.auth_manager.set_config(project.auth_config)
-                
+
             self._update_recent_projects_menu()
 
     def _save_current_as_project(self):

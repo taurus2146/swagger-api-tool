@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime
 
 from .database_schema import DatabaseSchema
+from .database_connection_manager import DatabaseConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,71 +30,33 @@ class DatabaseManager:
     def __init__(self, db_path: str = None):
         """
         初始化数据库管理器
-        
+
         Args:
             db_path: 数据库文件路径，如果为None则使用默认路径
         """
         self.db_path = db_path
-        self._connection = None
-        self._lock = threading.RLock()  # 线程安全锁
-        self._is_connected = False
         self.schema = DatabaseSchema()
+
+        # 使用连接管理器
+        self.connection_manager = DatabaseConnectionManager(db_path) if db_path else None
     
     def connect(self) -> bool:
         """
         连接到数据库
-        
+
         Returns:
             bool: 连接是否成功
         """
-        with self._lock:
-            try:
-                if self._is_connected and self._connection:
-                    return True
-                
-                if not self.db_path:
-                    logger.error("数据库路径未设置")
-                    return False
-                
-                # 确保数据库目录存在
-                db_dir = os.path.dirname(self.db_path)
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True)
-                
-                # 连接数据库
-                self._connection = sqlite3.connect(
-                    self.db_path,
-                    check_same_thread=False,  # 允许多线程访问
-                    timeout=30.0  # 30秒超时
-                )
-                
-                # 设置连接参数
-                self._connection.row_factory = sqlite3.Row  # 使用字典式访问
-                self._connection.execute('PRAGMA foreign_keys = ON')  # 启用外键约束
-                self._connection.execute('PRAGMA journal_mode = WAL')  # 使用WAL模式提高并发性能
-                
-                self._is_connected = True
-                logger.info(f"数据库连接成功: {self.db_path}")
-                
-                return True
-                
-            except sqlite3.Error as e:
-                logger.error(f"数据库连接失败: {e}")
-                self._is_connected = False
-                return False
+        if not self.connection_manager:
+            logger.error("连接管理器未初始化")
+            return False
+
+        return self.connection_manager.connect()
     
     def disconnect(self) -> None:
         """断开数据库连接"""
-        with self._lock:
-            if self._connection:
-                try:
-                    self._connection.close()
-                    logger.info("数据库连接已关闭")
-                except sqlite3.Error as e:
-                    logger.error(f"关闭数据库连接时出错: {e}")
-                finally:
-                    self._connection = None
-                    self._is_connected = False
+        if self.connection_manager:
+            self.connection_manager.disconnect()
     
     def initialize_database(self) -> bool:
         """
@@ -104,10 +67,10 @@ class DatabaseManager:
         """
         if not self.connect():
             return False
-        
-        with self._lock:
-            try:
-                cursor = self._connection.cursor()
+
+        try:
+            with self.connection_manager.get_connection() as conn:
+                cursor = conn.cursor()
                 
                 # 执行所有创建语句（表、索引、触发器、视图）
                 creation_statements = self.schema.get_all_creation_statements()
@@ -130,15 +93,14 @@ class DatabaseManager:
                 # 插入初始数据
                 for initial_sql in self.schema.INITIAL_DATA:
                     cursor.execute(initial_sql)
-                
-                self._connection.commit()
+
+                conn.commit()
                 logger.info("数据库初始化完成")
                 return True
-                
-            except sqlite3.Error as e:
-                logger.error(f"数据库初始化失败: {e}")
-                self._connection.rollback()
-                return False
+
+        except sqlite3.Error as e:
+            logger.error(f"数据库初始化失败: {e}")
+            return False
     
     def get_database_version(self) -> Optional[int]:
         """
@@ -147,14 +109,16 @@ class DatabaseManager:
         Returns:
             Optional[int]: 数据库版本号，如果获取失败返回None
         """
-        if not self._is_connected:
+        if not self.connection_manager:
             return None
-        
+
         try:
-            cursor = self._connection.cursor()
-            cursor.execute('SELECT version FROM database_info LIMIT 1')
-            result = cursor.fetchone()
-            return result[0] if result else None
+            with self.connection_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT version FROM database_info LIMIT 1')
+                result = cursor.fetchone()
+                cursor.close()
+                return result[0] if result else None
         except sqlite3.Error as e:
             logger.error(f"获取数据库版本失败: {e}")
             return None
@@ -194,7 +158,7 @@ class DatabaseManager:
         Returns:
             bool: 备份是否成功
         """
-        if not self._is_connected or not self.db_path:
+        if not self.connection_manager or not self.db_path:
             logger.error("数据库未连接或路径无效")
             return False
         
@@ -263,7 +227,7 @@ class DatabaseManager:
         """
         info = {
             'db_path': self.db_path,
-            'is_connected': self._is_connected,
+            'is_connected': self.connection_manager is not None,
             'version': self.get_database_version(),
             'file_exists': os.path.exists(self.db_path) if self.db_path else False,
             'file_size': 0,
@@ -274,18 +238,20 @@ class DatabaseManager:
         if self.db_path and os.path.exists(self.db_path):
             info['file_size'] = os.path.getsize(self.db_path)
         
-        if self._is_connected:
+        if self.connection_manager:
             try:
-                cursor = self._connection.cursor()
-                
-                # 获取表数量
-                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
-                info['table_count'] = cursor.fetchone()[0]
-                
-                # 获取项目记录数量
-                cursor.execute("SELECT COUNT(*) FROM projects")
-                info['record_count'] = cursor.fetchone()[0]
-                
+                with self.connection_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+
+                    # 获取表数量
+                    cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
+                    info['table_count'] = cursor.fetchone()[0]
+
+                    # 获取项目记录数量
+                    cursor.execute("SELECT COUNT(*) FROM projects")
+                    info['record_count'] = cursor.fetchone()[0]
+
+                    cursor.close()
             except sqlite3.Error as e:
                 logger.error(f"获取数据库信息失败: {e}")
         
@@ -298,13 +264,15 @@ class DatabaseManager:
         Returns:
             bool: 连接测试是否成功
         """
-        if not self._is_connected:
+        if not self.connection_manager:
             return False
-        
+
         try:
-            cursor = self._connection.cursor()
-            cursor.execute('SELECT 1')
-            return True
+            with self.connection_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT 1')
+                cursor.close()
+                return True
         except sqlite3.Error as e:
             logger.error(f"数据库连接测试失败: {e}")
             return False
@@ -313,91 +281,59 @@ class DatabaseManager:
     def get_cursor(self):
         """
         获取数据库游标的上下文管理器
-        
+
         Yields:
             sqlite3.Cursor: 数据库游标
         """
-        if not self._is_connected:
-            raise sqlite3.Error("数据库未连接")
-        
-        with self._lock:
-            cursor = self._connection.cursor()
+        with self.connection_manager.get_connection() as conn:
+            cursor = conn.cursor()
             try:
                 yield cursor
             finally:
                 cursor.close()
-    
+
     @contextmanager
     def transaction(self):
         """
         事务上下文管理器
-        
+
         Yields:
             sqlite3.Cursor: 数据库游标
         """
-        if not self._is_connected:
-            raise sqlite3.Error("数据库未连接")
-        
-        with self._lock:
-            cursor = self._connection.cursor()
-            try:
-                yield cursor
-                self._connection.commit()
-            except Exception:
-                self._connection.rollback()
-                raise
-            finally:
-                cursor.close()
+        with self.connection_manager.transaction() as cursor:
+            yield cursor
     
     def execute_query(self, sql: str, params: tuple = None) -> Optional[list]:
         """
         执行查询SQL
-        
+
         Args:
             sql: SQL语句
             params: 参数元组
-            
+
         Returns:
             Optional[list]: 查询结果列表，失败返回None
         """
-        if not self._is_connected:
+        if not self.connection_manager:
             return None
-        
-        try:
-            with self.get_cursor() as cursor:
-                if params:
-                    cursor.execute(sql, params)
-                else:
-                    cursor.execute(sql)
-                return cursor.fetchall()
-        except sqlite3.Error as e:
-            logger.error(f"执行查询失败: {e}")
-            return None
+
+        return self.connection_manager.execute_query(sql, params)
     
     def execute_update(self, sql: str, params: tuple = None) -> bool:
         """
         执行更新SQL
-        
+
         Args:
             sql: SQL语句
             params: 参数元组
-            
+
         Returns:
             bool: 执行是否成功
         """
-        if not self._is_connected:
+        if not self.connection_manager:
             return False
-        
-        try:
-            with self.transaction() as cursor:
-                if params:
-                    cursor.execute(sql, params)
-                else:
-                    cursor.execute(sql)
-                return True
-        except sqlite3.Error as e:
-            logger.error(f"执行更新失败: {e}")
-            return False
+
+        return self.connection_manager.execute_update(sql, params)
     
     def __enter__(self):
         """上下文管理器入口"""

@@ -1,0 +1,39 @@
+# 轻量级依赖配置
+# 移除了大型可选依赖，专注于核心功能
+
+# 核心GUI框架
+PyQt5==5.15.9
+
+# HTTP和网络
+requests==2.28.2
+urllib3==1.26.15
+
+# 数据解析
+PyYAML==6.0
+jsonschema==4.17.3
+swagger-parser==1.0.3
+
+# 基础工具
+python-dateutil==2.8.2
+chardet==5.1.0
+
+# 测试数据生成（保留，体积小且有用）
+faker==18.7.0
+
+# 加密功能（核心安全功能）
+cryptography==41.0.3
+
+# 移除的大型依赖（节省空间）:
+# pandas==2.0.3          # ~80MB - 数据分析库
+# openpyxl==3.1.2        # ~10MB - Excel支持
+# pytest==7.3.1          # ~15MB - 测试工具
+# pytest-html==3.2.0     # ~5MB  - 测试报告
+# coverage==7.2.7         # ~8MB  - 代码覆盖率
+# mock==5.1.0             # ~3MB  - 测试模拟
+# psutil==5.9.5           # ~8MB  - 系统监控
+# tqdm==4.65.0            # ~3MB  - 进度条
+# bcrypt==4.0.1           # ~5MB  - 密码哈希
+# keyring==24.2.0         # ~8MB  - 系统密钥环
+
+# 预计节省空间: ~145MB
+# 优化后预计总大小: ~60-80MB

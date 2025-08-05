@@ -122,27 +122,107 @@ class DatabaseVersionManager:
             ]
         )
         
-        # 未来版本的迁移脚本可以在这里添加
-        # 例如：版本1到版本2
-        # scripts[(1, 2)] = MigrationScript(
-        #     from_version=1,
-        #     to_version=2,
-        #     direction=MigrationDirection.UPGRADE,
-        #     description="升级到版本2：添加新功能",
-        #     sql_statements=[
-        #         # 示例：添加新表或字段
-        #         "ALTER TABLE projects ADD COLUMN priority INTEGER DEFAULT 0",
-        #         "CREATE INDEX IF NOT EXISTS idx_projects_priority ON projects(priority)"
-        #     ],
-        #     rollback_statements=[
-        #         # 回滚操作
-        #         "DROP INDEX IF EXISTS idx_projects_priority",
-        #         "ALTER TABLE projects DROP COLUMN priority"
-        #     ]
-        # )
+        # 版本1到版本2：添加Swagger文档缓存功能
+        scripts[(1, 2)] = MigrationScript(
+            from_version=1,
+            to_version=2,
+            direction=MigrationDirection.UPGRADE,
+            description="升级到版本2：添加Swagger文档缓存功能",
+            sql_statements=self._get_v1_to_v2_migration_statements(),
+            rollback_statements=[
+                "DROP INDEX IF EXISTS idx_swagger_apis_operation_id",
+                "DROP INDEX IF EXISTS idx_swagger_apis_tags",
+                "DROP INDEX IF EXISTS idx_swagger_apis_path_method",
+                "DROP INDEX IF EXISTS idx_swagger_apis_project_id",
+                "DROP INDEX IF EXISTS idx_swagger_apis_document_id",
+                "DROP INDEX IF EXISTS idx_swagger_documents_expires_at",
+                "DROP INDEX IF EXISTS idx_swagger_documents_cached_at",
+                "DROP INDEX IF EXISTS idx_swagger_documents_current",
+                "DROP INDEX IF EXISTS idx_swagger_documents_hash",
+                "DROP INDEX IF EXISTS idx_swagger_documents_project_id",
+                "DROP TABLE IF EXISTS swagger_apis",
+                "DROP TABLE IF EXISTS swagger_documents"
+            ]
+        )
         
         return scripts
-    
+
+    def _get_v1_to_v2_migration_statements(self) -> List[str]:
+        """
+        获取版本1到版本2的迁移语句
+
+        Returns:
+            List[str]: SQL语句列表
+        """
+        statements = []
+
+        # 创建swagger_documents表
+        statements.append('''
+            CREATE TABLE IF NOT EXISTS swagger_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                version TEXT,
+                title TEXT,
+                description TEXT,
+                base_path TEXT,
+                host TEXT,
+                schemes TEXT,
+                consumes TEXT,
+                produces TEXT,
+                api_count INTEGER DEFAULT 0,
+                cached_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME,
+                is_current BOOLEAN DEFAULT 1,
+                source_url TEXT,
+                source_etag TEXT,
+                source_last_modified DATETIME,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # 创建swagger_apis表
+        statements.append('''
+            CREATE TABLE IF NOT EXISTS swagger_apis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL,
+                project_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS')),
+                operation_id TEXT,
+                summary TEXT,
+                description TEXT,
+                tags TEXT,
+                parameters TEXT,
+                request_body TEXT,
+                responses TEXT,
+                security TEXT,
+                deprecated BOOLEAN DEFAULT 0,
+                external_docs TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES swagger_documents(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                UNIQUE(document_id, path, method)
+            )
+        ''')
+
+        # 创建索引
+        statements.extend([
+            'CREATE INDEX IF NOT EXISTS idx_swagger_documents_project_id ON swagger_documents(project_id)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_documents_hash ON swagger_documents(content_hash)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_documents_current ON swagger_documents(project_id, is_current)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_documents_cached_at ON swagger_documents(cached_at)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_documents_expires_at ON swagger_documents(expires_at)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_apis_document_id ON swagger_apis(document_id)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_apis_project_id ON swagger_apis(project_id)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_apis_path_method ON swagger_apis(path, method)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_apis_tags ON swagger_apis(tags)',
+            'CREATE INDEX IF NOT EXISTS idx_swagger_apis_operation_id ON swagger_apis(operation_id)'
+        ])
+
+        return statements
+
     def _get_v0_to_v1_migration_statements(self) -> List[str]:
         """
         获取从版本0到版本1的迁移语句
