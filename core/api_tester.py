@@ -450,11 +450,43 @@ class ApiTester:
         
         # 添加数据
         if data:
+            print(f"[DEBUG] curl生成 - 数据类型: {type(data)}, 数据内容: {data}")
+            logger.info(f"curl生成 - 数据类型: {type(data)}, 数据内容: {data}")
             if isinstance(data, dict):
+                # 对于字典类型的数据，确保设置正确的Content-Type
+                print(f"[DEBUG] curl生成 - 当前headers: {headers}")
+                logger.info(f"curl生成 - 当前headers: {headers}")
+                # 检查Content-Type是否已存在（不区分大小写）
+                content_type_exists = any(key.lower() == 'content-type' for key in headers.keys())
+                if not content_type_exists:
+                    print("[DEBUG] curl生成 - 添加Content-Type: application/json")
+                    logger.info("curl生成 - 添加Content-Type: application/json")
+                    curl_command += f' -H "Content-Type: application/json"'
+                else:
+                    print(f"[DEBUG] curl生成 - Content-Type已存在: {headers}")
+                    logger.info(f"curl生成 - Content-Type已存在: {headers}")
                 data_str = json.dumps(data)
                 curl_command += f' -d \'{data_str}\''
+                print(f"[DEBUG] curl生成 - 添加JSON数据: {data_str}")
+                logger.info(f"curl生成 - 添加JSON数据: {data_str}")
+            elif isinstance(data, list):
+                # 对于列表类型的数据，也应该作为JSON处理
+                print(f"[DEBUG] curl生成 - 列表数据，作为JSON处理")
+                logger.info(f"curl生成 - 列表数据，作为JSON处理")
+                # 检查Content-Type是否已存在（不区分大小写）
+                content_type_exists = any(key.lower() == 'content-type' for key in headers.keys())
+                if not content_type_exists:
+                    print("[DEBUG] curl生成 - 为列表数据添加Content-Type: application/json")
+                    logger.info("curl生成 - 为列表数据添加Content-Type: application/json")
+                    curl_command += f' -H "Content-Type: application/json"'
+                data_str = json.dumps(data)
+                curl_command += f' -d \'{data_str}\''
+                print(f"[DEBUG] curl生成 - 添加JSON列表数据: {data_str}")
+                logger.info(f"curl生成 - 添加JSON列表数据: {data_str}")
             else:
                 curl_command += f' -d \'{data}\''
+                print(f"[DEBUG] curl生成 - 添加非JSON数据: {data}")
+                logger.info(f"curl生成 - 添加非JSON数据: {data}")
         
         # 添加URL
         curl_command += f' "{url}"'

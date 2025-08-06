@@ -34,6 +34,7 @@ class DataGenerator:
         self.generating_schemas = set()  # 正在生成的schema，防止循环引用
 
         # 调试信息
+        print(f"DataGenerator初始化: 实例ID={id(self)}")
         if swagger_data:
             print(f"DataGenerator初始化: swagger_data类型={type(swagger_data)}, 大小={len(str(swagger_data))}")
             if isinstance(swagger_data, dict):
@@ -41,8 +42,28 @@ class DataGenerator:
                 print(f"DataGenerator初始化: 包含components={bool(swagger_data.get('components'))}")
         else:
             print("DataGenerator初始化: swagger_data为空")
-    
+
     def set_swagger_data(self, swagger_data):
+        """
+        设置Swagger数据
+
+        Args:
+            swagger_data (dict): Swagger文档数据
+        """
+        print(f"DataGenerator.set_swagger_data: 实例ID={id(self)}")
+        print(f"DataGenerator.set_swagger_data: 新数据类型={type(swagger_data)}")
+        if swagger_data:
+            print(f"DataGenerator.set_swagger_data: 新数据大小={len(str(swagger_data))}")
+        else:
+            print("DataGenerator.set_swagger_data: 新数据为空")
+
+        self.swagger_data = swagger_data
+        # 清空缓存，因为swagger_data已更改
+        self.cache = {}
+
+        print(f"DataGenerator.set_swagger_data: 设置完成，当前swagger_data类型={type(self.swagger_data)}")
+
+    def get_swagger_data_status(self):
         """
         设置Swagger文档数据
         
@@ -115,11 +136,60 @@ class DataGenerator:
                 return self.cache[ref_path]
             
             # 解析引用
+            print(f"检查swagger_data状态: 类型={type(self.swagger_data)}, 是否为空={self.swagger_data is None}")
+
+            # 如果swagger_data为空，尝试从swagger_parser获取
+            if not self.swagger_data and hasattr(self, 'swagger_parser') and self.swagger_parser:
+                print("尝试从swagger_parser获取swagger_data")
+                if hasattr(self.swagger_parser, 'swagger_data') and self.swagger_parser.swagger_data:
+                    self.swagger_data = self.swagger_parser.swagger_data
+                    print(f"从swagger_parser获取swagger_data成功: 类型={type(self.swagger_data)}")
+                else:
+                    print("swagger_parser没有有效的swagger_data")
+
+            if self.swagger_data:
+                print(f"swagger_data包含的顶级键: {list(self.swagger_data.keys()) if isinstance(self.swagger_data, dict) else 'not dict'}")
+                if isinstance(self.swagger_data, dict) and 'components' in self.swagger_data:
+                    components = self.swagger_data['components']
+                    if isinstance(components, dict) and 'schemas' in components:
+                        schemas = components['schemas']
+                        print(f"schemas中包含的键: {list(schemas.keys())[:10]}...")  # 只显示前10个
+                        if 'FunctionAreaDTO' in schemas:
+                            print(f"找到FunctionAreaDTO: {schemas['FunctionAreaDTO']}")
+                        else:
+                            print("schemas中没有找到FunctionAreaDTO")
+                    else:
+                        print("components中没有schemas")
+                else:
+                    print("swagger_data中没有components")
+
+            # 如果还是没有swagger_data，尝试从全局获取
+            if not self.swagger_data:
+                print("尝试从全局获取swagger_data")
+                try:
+                    # 尝试从应用的全局状态获取swagger_data
+                    from gui.main_window import MainWindow
+                    if hasattr(MainWindow, '_instance') and MainWindow._instance:
+                        main_window = MainWindow._instance
+                        if hasattr(main_window, 'swagger_parser') and main_window.swagger_parser:
+                            if hasattr(main_window.swagger_parser, 'swagger_data'):
+                                self.swagger_data = main_window.swagger_parser.swagger_data
+                                print(f"从全局获取swagger_data成功: 类型={type(self.swagger_data)}")
+                            else:
+                                print("全局swagger_parser没有swagger_data属性")
+                        else:
+                            print("全局main_window没有swagger_parser")
+                    else:
+                        print("无法获取全局MainWindow实例")
+                except Exception as e:
+                    print(f"从全局获取swagger_data失败: {e}")
+
             if self.swagger_data:
                 try:
+                    print(f"尝试解析引用: {ref_path}")
                     resolved = self._resolve_reference(ref_path)
                     if resolved:
-                        print(f"解析引用成功: {ref_path}")
+                        print(f"解析引用成功: {ref_path}, 解析结果类型: {type(resolved)}")
                         generated = self._generate_example_object(resolved)
                         # 缓存解析结果
                         self.cache[ref_path] = generated
@@ -128,15 +198,23 @@ class DataGenerator:
                         print(f"解析引用失败: {ref_path}")
                 except Exception as e:
                     print(f"解析引用时出现异常: {e}")
+                    import traceback
+                    traceback.print_exc()
             else:
-                print("无法解析引用: swagger_data为空")
+                print(f"无法解析引用: swagger_data为空, self.swagger_data={self.swagger_data}")
+                print(f"DataGenerator实例ID: {id(self)}")
                 # 尝试从引用路径推断数据类型
                 return self._generate_fallback_data_from_ref(ref_path)
             
             # 无法解析引用，返回示例对象
-            print("生成默认示例对象")
+            print(f"生成默认示例对象，原始schema: {schema}")
             try:
-                return self._generate_example_object()
+                # 如果原始schema有properties，优先使用
+                if isinstance(schema, dict) and 'properties' in schema:
+                    print("使用原始schema的properties生成对象")
+                    return self._generate_example_object(schema)
+                else:
+                    return self._generate_example_object()
             except Exception as e:
                 print(f"生成默认示例对象失败: {e}")
                 return {"error": "无法生成示例数据"}
@@ -201,7 +279,14 @@ class DataGenerator:
         # 从引用路径中提取可能的类型信息
         path_lower = ref_path.lower()
 
-        if 'user' in path_lower or '用户' in path_lower:
+        # 专门处理FunctionAreaDTO
+        if 'functionareadto' in path_lower or ref_path == '#/components/schemas/FunctionAreaDTO':
+            print(f"为FunctionAreaDTO生成专用结构")
+            return {
+                "name": self._generate_string({"description": "功能区域名称"}),
+                "imageUrl": self._generate_string({"description": "功能区域图片URL"})
+            }
+        elif 'user' in path_lower or '用户' in path_lower:
             return {
                 "id": random.randint(1, 1000),
                 "name": fake.name(),
@@ -252,23 +337,29 @@ class DataGenerator:
             dict: 示例对象
         """
         if schema and isinstance(schema, dict) and 'properties' in schema:
+            print(f"使用schema properties生成对象: {list(schema['properties'].keys())}")
             result = {}
+            required = schema.get('required', [])
+
             for prop_name, prop_schema in schema['properties'].items():
-                if prop_schema.get('type') == 'string':
-                    # 使用完整的字符串生成逻辑
-                    result[prop_name] = self._generate_string(prop_schema)
-                elif prop_schema.get('type') == 'integer':
-                    result[prop_name] = self._generate_integer(prop_schema)
-                elif prop_schema.get('type') == 'number':
-                    result[prop_name] = self._generate_number(prop_schema)
-                elif prop_schema.get('type') == 'boolean':
-                    result[prop_name] = self._generate_boolean(prop_schema)
-                elif prop_schema.get('type') == 'array':
-                    result[prop_name] = self._generate_array(prop_schema)
-                elif prop_schema.get('type') == 'object':
-                    result[prop_name] = self._generate_object(prop_schema)
-                else:
-                    result[prop_name] = None
+                try:
+                    print(f"生成属性 {prop_name}, schema: {prop_schema}")
+                    # 使用递归的generate_data方法，这样可以正确处理引用
+                    result[prop_name] = self.generate_data(prop_schema)
+                except Exception as e:
+                    print(f"生成属性 {prop_name} 失败: {e}")
+                    # 如果是必需属性，提供一个默认值
+                    if prop_name in required:
+                        if prop_schema.get('type') == 'string':
+                            result[prop_name] = f"默认_{prop_name}"
+                        elif prop_schema.get('type') in ['integer', 'number']:
+                            result[prop_name] = 0
+                        elif prop_schema.get('type') == 'boolean':
+                            result[prop_name] = False
+                        elif prop_schema.get('type') == 'array':
+                            result[prop_name] = []
+                        else:
+                            result[prop_name] = None
             return result
         
         # 默认生成通用示例对象

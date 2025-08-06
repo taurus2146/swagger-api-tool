@@ -53,15 +53,21 @@ class ApiParamEditor(QWidget):
         
         # 设置数据生成器并确保它有swagger_data
         if swagger_parser:
+            print(f"ApiParamEditor.set_swagger_parser: swagger_parser存在")
             if swagger_parser.data_generator:
+                print(f"ApiParamEditor.set_swagger_parser: 使用现有data_generator")
                 self.data_generator = swagger_parser.data_generator
             else:
-                # 如果SwaggerParser没有data_generator，创建一个新的并设置swagger_data
-                self.data_generator = DataGenerator(swagger_data=swagger_parser.swagger_data)
-            
-            # 确保数据生成器有最新的swagger_data
-            if self.data_generator and hasattr(swagger_parser, 'swagger_data'):
-                self.data_generator.swagger_data = swagger_parser.swagger_data
+                print(f"ApiParamEditor.set_swagger_parser: 创建新的data_generator")
+                # 创建一个新的DataGenerator，但不立即设置swagger_data
+                self.data_generator = DataGenerator()
+                # 保存swagger_parser的引用，以便动态获取数据
+                self.data_generator.swagger_parser = swagger_parser
+
+            # 保存swagger_parser引用，确保能动态获取最新数据
+            if self.data_generator:
+                self.data_generator.swagger_parser = swagger_parser
+                print(f"ApiParamEditor.set_swagger_parser: 设置swagger_parser引用")
         
     def init_ui(self):
         """
@@ -721,6 +727,7 @@ class ApiParamEditor(QWidget):
         # 检查是否有请求体标签页可见（表示API支持请求体）
         # 仅当请求体标签页可见时才获取请求体内容
         if self.param_tabs.indexOf(self.body_param_tab) != -1:
+            method = self.api_info.get('method', 'UNKNOWN') if self.api_info else 'UNKNOWN'
             logger.debug(f"API方法: {method}, 请求体类型: JSON")
             try:
                 json_text = self.json_editor.toPlainText()
