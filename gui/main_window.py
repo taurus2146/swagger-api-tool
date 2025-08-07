@@ -907,18 +907,7 @@ class MainWindow(QMainWindow):
             logger.warning(f"更新数据库状态失败: {e}")
     
 
-    
-    def _show_data_recovery(self):
-        """显示数据恢复对话框"""
-        try:
-            from .data_recovery_dialog import DataRecoveryDialog
-            dialog = DataRecoveryDialog(self.project_manager.db_manager.db_path, self)
-            if dialog.exec_() == dialog.Accepted:
-                # 如果数据恢复成功，刷新项目列表
-                self._refresh_project_data()
-        except Exception as e:
-            logger.error(f"显示数据恢复时出错: {e}")
-            QMessageBox.critical(self, "错误", f"无法打开数据恢复:\n{str(e)}")
+
 
     def _show_database_path_dialog(self):
         """显示数据库路径设置对话框"""

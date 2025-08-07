@@ -19,14 +19,12 @@ class ThemeManager:
             'blue': self._get_blue_theme(),
             'purple': self._get_purple_theme(),
             'green': self._get_green_theme(),
-            'sunset': self._get_sunset_theme(),
             'ocean': self._get_ocean_theme(),
+            'deep_space': self._get_deep_space_theme(),
+            'night_mode': self._get_night_mode_theme(),
             'forest': self._get_forest_theme(),
-            'coral': self._get_coral_theme(),
-            'sakura': self._get_sakura_theme(),
             'mint': self._get_mint_theme(),
             'lavender': self._get_lavender_theme(),
-
             'arctic': self._get_arctic_theme(),
             'rose': self._get_rose_theme()
         }
@@ -60,11 +58,10 @@ class ThemeManager:
             'blue': '蓝色主题',
             'purple': '紫色主题',
             'green': '绿色主题',
-            'sunset': '日落主题',
             'ocean': '海洋主题',
+            'deep_space': '深空主题',
+            'night_mode': '夜间模式',
             'forest': '森林主题',
-            'coral': '珊瑚主题',
-            'sakura': '樱花主题',
             'mint': '薄荷主题',
             'lavender': '薰衣草',
             'coffee': '咖啡主题',
@@ -276,45 +273,7 @@ class ThemeManager:
         }
     
 
-    def _get_sunset_theme(self):
-        """日落主题"""
-        return {
-            'name': '日落主题',
-            'colors': {
-                'primary': '#FF4500',
-                'primary_hover': '#FF6347',
-                'primary_pressed': '#FF7F50',
-                'secondary': '#FFD700',
-                'secondary_hover': '#FFA500',
-                'warning': '#FF8C00',
-                'warning_hover': '#FF4500',
-                'danger': '#DC143C',
-                'danger_hover': '#B22222',
-                'background': '#FFEDCC',
-                'surface': '#FFE4B5',
-                'text': '#8B4513',
-                'text_secondary': '#A0522D',
-                'border': '#DEB887',
-                'selection': '#FFDEAD'
-            },
-            'stylesheet': self._generate_stylesheet({
-                'primary': '#FF4500',
-                'primary_hover': '#FF6347',
-                'primary_pressed': '#FF7F50',
-                'secondary': '#FFD700',
-                'secondary_hover': '#FFA500',
-                'warning': '#FF8C00',
-                'warning_hover': '#FF4500',
-                'danger': '#DC143C',
-                'danger_hover': '#B22222',
-                'background': '#FFEDCC',
-                'surface': '#FFE4B5',
-                'text': '#8B4513',
-                'text_secondary': '#A0522D',
-                'border': '#DEB887',
-                'selection': '#FFDEAD'
-            })
-        }
+
 
     def _get_ocean_theme(self):
         """海洋主题"""
@@ -353,6 +312,86 @@ class ThemeManager:
                 'text_secondary': '#696969',
                 'border': '#B0E0E6',
                 'selection': '#ADD8E6'
+            })
+        }
+
+    def _get_deep_space_theme(self):
+        """深空主题（深色专业主题）"""
+        return {
+            'name': '深空主题',
+            'colors': {
+                'primary': '#1a1a2e',
+                'primary_hover': '#16213e',
+                'primary_pressed': '#0f3460',
+                'secondary': '#533483',
+                'secondary_hover': '#6c5ce7',
+                'warning': '#fdcb6e',
+                'warning_hover': '#e17055',
+                'danger': '#d63031',
+                'danger_hover': '#b71c1c',
+                'background': '#0e0e23',
+                'surface': '#16213e',
+                'text': '#ddd',
+                'text_secondary': '#aaa',
+                'border': '#2d3748',
+                'selection': '#1a1a2e'
+            },
+            'stylesheet': self._generate_stylesheet({
+                'primary': '#1a1a2e',
+                'primary_hover': '#16213e',
+                'primary_pressed': '#0f3460',
+                'secondary': '#533483',
+                'secondary_hover': '#6c5ce7',
+                'warning': '#fdcb6e',
+                'warning_hover': '#e17055',
+                'danger': '#d63031',
+                'danger_hover': '#b71c1c',
+                'background': '#0e0e23',
+                'surface': '#16213e',
+                'text': '#ddd',
+                'text_secondary': '#aaa',
+                'border': '#2d3748',
+                'selection': '#1a1a2e'
+            })
+        }
+
+    def _get_night_mode_theme(self):
+        """夜间模式主题（护眼深色主题）"""
+        return {
+            'name': '夜间模式',
+            'colors': {
+                'primary': '#4a90e2',
+                'primary_hover': '#357abd',
+                'primary_pressed': '#2968a3',
+                'secondary': '#5a6c7d',
+                'secondary_hover': '#4a5a6b',
+                'warning': '#f39c12',
+                'warning_hover': '#e67e22',
+                'danger': '#e74c3c',
+                'danger_hover': '#c0392b',
+                'background': '#1a1a1a',
+                'surface': '#2d2d2d',
+                'text': '#e0e0e0',
+                'text_secondary': '#b0b0b0',
+                'border': '#404040',
+                'selection': '#4a90e2'
+            },
+            'stylesheet': self._generate_stylesheet({
+                'primary': '#4a90e2',
+                'primary_hover': '#357abd',
+                'primary_pressed': '#2968a3',
+                'secondary': '#5a6c7d',
+                'secondary_hover': '#4a5a6b',
+                'warning': '#f39c12',
+                'warning_hover': '#e67e22',
+                'danger': '#e74c3c',
+                'danger_hover': '#c0392b',
+                'background': '#1a1a1a',
+                'surface': '#2d2d2d',
+                'text': '#e0e0e0',
+                'text_secondary': '#b0b0b0',
+                'border': '#404040',
+                'selection': '#4a90e2'
             })
         }
 
@@ -397,45 +436,7 @@ class ThemeManager:
         }
 
 
-    def _get_coral_theme(self):
-        """珊瑚主题"""
-        return {
-            'name': '珊瑚主题',
-            'colors': {
-                'primary': '#FF7F50',
-                'primary_hover': '#FF6347',
-                'primary_pressed': '#FF4500',
-                'secondary': '#FF8C00',
-                'secondary_hover': '#FFA07A',
-                'warning': '#FF4500',
-                'warning_hover': '#FF6347',
-                'danger': '#B22222',
-                'danger_hover': '#8B0000',
-                'background': '#FFF5EE',
-                'surface': '#FDF5E6',
-                'text': '#8B4513',
-                'text_secondary': '#A0522D',
-                'border': '#FFE4C4',
-                'selection': '#FFDAB9'
-            },
-            'stylesheet': self._generate_stylesheet({
-                'primary': '#FF7F50',
-                'primary_hover': '#FF6347',
-                'primary_pressed': '#FF4500',
-                'secondary': '#FF8C00',
-                'secondary_hover': '#FFA07A',
-                'warning': '#FF4500',
-                'warning_hover': '#FF6347',
-                'danger': '#B22222',
-                'danger_hover': '#8B0000',
-                'background': '#FFF5EE',
-                'surface': '#FDF5E6',
-                'text': '#8B4513',
-                'text_secondary': '#A0522D',
-                'border': '#FFE4C4',
-                'selection': '#FFDAB9'
-            })
-        }
+
 
     
     def _generate_stylesheet(self, colors):
@@ -866,45 +867,7 @@ QListWidget::item:selected {{
 }}
 """
 
-    def _get_sakura_theme(self):
-        """樱花主题（粉色系）"""
-        return {
-            'name': '樱花主题',
-            'colors': {
-                'primary': '#FF69B4',
-                'primary_hover': '#FF1493',
-                'primary_pressed': '#DC143C',
-                'secondary': '#FFB6C1',
-                'secondary_hover': '#FF91A4',
-                'warning': '#FFA07A',
-                'warning_hover': '#FF7F50',
-                'danger': '#CD5C5C',
-                'danger_hover': '#B22222',
-                'background': '#FFF0F5',
-                'surface': '#FFEBF0',
-                'text': '#8B008B',
-                'text_secondary': '#DA70D6',
-                'border': '#FFB6C1',
-                'selection': '#FFCCCB'
-            },
-            'stylesheet': self._generate_stylesheet({
-                'primary': '#FF69B4',
-                'primary_hover': '#FF1493',
-                'primary_pressed': '#DC143C',
-                'secondary': '#FFB6C1',
-                'secondary_hover': '#FF91A4',
-                'warning': '#FFA07A',
-                'warning_hover': '#FF7F50',
-                'danger': '#CD5C5C',
-                'danger_hover': '#B22222',
-                'background': '#FFF0F5',
-                'surface': '#FFEBF0',
-                'text': '#8B008B',
-                'text_secondary': '#DA70D6',
-                'border': '#FFB6C1',
-                'selection': '#FFCCCB'
-            })
-        }
+
 
     def _get_mint_theme(self):
         """薄荷主题（清新绿色）"""
