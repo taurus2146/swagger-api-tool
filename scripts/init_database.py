@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.database_manager import DatabaseManager
 from core.database_schema import DatabaseSchema
-from core.migration_service import MigrationService
 
 # 配置日志
 logging.basicConfig(
