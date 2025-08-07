@@ -24,10 +24,9 @@ class ProjectManager:
     def __init__(self, storage_path: str = None):
         if storage_path is None:
             storage_path = get_default_storage_path()
-        
-        # 获取数据库文件的完整路径
-        from .storage_utils import get_default_database_path
-        db_path = get_default_database_path()
+
+        # 获取数据库文件的完整路径（优先使用配置的路径）
+        db_path = self._get_configured_database_path()
         
         # 初始化数据库管理器
         self.db_manager = DatabaseManager(db_path)
@@ -62,6 +61,31 @@ class ProjectManager:
         self._autosave_thread = threading.Thread(target=self._autosave_loop, daemon=True)
         self._autosave_thread.start()
         logger.info("项目管理器已初始化，使用数据库存储")
+
+    def _get_configured_database_path(self):
+        """获取配置的数据库路径"""
+        import json
+        import os
+        from .storage_utils import get_default_storage_path, get_default_database_path
+
+        try:
+            config_dir = get_default_storage_path()
+            config_file = os.path.join(config_dir, "database_path.json")
+
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    configured_path = config_data.get("database_path")
+                    if configured_path and os.path.isabs(configured_path):
+                        logger.info(f"使用配置的数据库路径: {configured_path}")
+                        return configured_path
+        except Exception as e:
+            logger.warning(f"加载数据库路径配置失败: {e}")
+
+        # 返回默认路径
+        default_path = get_default_database_path()
+        logger.info(f"使用默认数据库路径: {default_path}")
+        return default_path
 
     def _load_current_project_on_startup(self):
         """启动时加载当前项目"""

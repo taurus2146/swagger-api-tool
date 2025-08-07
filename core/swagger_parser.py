@@ -13,7 +13,7 @@ import requests
 from urllib.parse import urlparse
 from typing import Optional
 
-from .swagger_cache_manager import SwaggerCacheManager
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class SwaggerParser:
         self.base_url = ""
         self.data_generator = None  # 数据生成器实例
         self.project_id = project_id
-        self.cache_manager = SwaggerCacheManager(db_manager) if db_manager else None
+        self.db_manager = db_manager
 
     def load_from_url(self, url, force_refresh=False):
         """
@@ -42,8 +42,8 @@ class SwaggerParser:
             bool: 是否成功加载
         """
         # 如果不是强制刷新，首先尝试从缓存加载
-        if not force_refresh and self.cache_manager and self.project_id:
-            cached_data = self.cache_manager.get_cached_swagger_data(self.project_id)
+        if not force_refresh and self.db_manager and self.project_id:
+            cached_data = self._get_cached_swagger_data()
             if cached_data:
                 logger.info("从缓存加载Swagger文档")
                 self.swagger_data = cached_data
@@ -69,10 +69,8 @@ class SwaggerParser:
                     return False
             
             # 保存到缓存
-            if self.cache_manager and self.project_id:
-                self.cache_manager.save_swagger_document(
-                    self.project_id, response.text, self.swagger_data, url, etag
-                )
+            if self.db_manager and self.project_id:
+                self._save_swagger_data_to_cache(self.swagger_data)
 
             self._setup_after_load(url)
             return True
@@ -141,10 +139,8 @@ class SwaggerParser:
                         return False
             
             # 保存到缓存
-            if self.cache_manager and self.project_id:
-                self.cache_manager.save_swagger_document(
-                    self.project_id, file_content, self.swagger_data
-                )
+            if self.db_manager and self.project_id:
+                self._save_swagger_data_to_cache(self.swagger_data)
 
             # 创建数据生成器并设置Swagger数据
             from core.data_generator import DataGenerator
@@ -165,10 +161,10 @@ class SwaggerParser:
         Returns:
             bool: 是否成功加载
         """
-        if not self.cache_manager or not self.project_id:
+        if not self.db_manager or not self.project_id:
             return False
 
-        cached_data = self.cache_manager.get_cached_swagger_data(self.project_id)
+        cached_data = self._get_cached_swagger_data()
         if cached_data:
             self.swagger_data = cached_data
             logger.info(f"从缓存加载的数据类型: {type(cached_data)}")
@@ -199,11 +195,11 @@ class SwaggerParser:
         Returns:
             bool: 是否有可用缓存
         """
-        if not self.cache_manager or not self.project_id:
+        if not self.db_manager or not self.project_id:
             return False
 
-        document = self.cache_manager.get_current_document(self.project_id)
-        return document is not None and not self.cache_manager.is_document_expired(document)
+        cached_data = self._get_cached_swagger_data()
+        return cached_data is not None
 
     def _parse_apis(self):
         """
@@ -435,8 +431,75 @@ class SwaggerParser:
     def get_base_url(self):
         """
         获取基础URL
-        
+
         Returns:
             str: 基础URL
         """
         return self.base_url
+
+    def _get_cached_swagger_data(self):
+        """从数据库获取缓存的Swagger数据"""
+        try:
+            with self.db_manager.connection_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT content FROM swagger_documents
+                    WHERE project_id = ? AND is_current = 1
+                    ORDER BY cached_at DESC LIMIT 1
+                """, (self.project_id,))
+
+                row = cursor.fetchone()
+                if row and row['content']:
+                    import json
+                    return json.loads(row['content'])
+
+        except Exception as e:
+            logger.error(f"获取缓存数据失败: {e}")
+
+        return None
+
+    def _save_swagger_data_to_cache(self, swagger_data):
+        """保存Swagger数据到数据库缓存"""
+        try:
+            import json
+            import hashlib
+
+            content_json = json.dumps(swagger_data, ensure_ascii=False)
+            content_hash = hashlib.md5(content_json.encode()).hexdigest()
+
+            # 提取文档信息
+            info = swagger_data.get('info', {})
+            title = info.get('title', '')
+            description = info.get('description', '')
+            version = info.get('version', '')
+
+            # 计算API数量
+            paths = swagger_data.get('paths', {})
+            api_count = sum(len(methods) for methods in paths.values() if isinstance(methods, dict))
+
+            with self.db_manager.connection_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 将之前的文档标记为非当前版本
+                cursor.execute("""
+                    UPDATE swagger_documents
+                    SET is_current = 0
+                    WHERE project_id = ?
+                """, (self.project_id,))
+
+                # 插入新的文档
+                cursor.execute("""
+                    INSERT INTO swagger_documents
+                    (project_id, content, content_hash, version, title, description,
+                     api_count, cached_at, is_current)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+                """, (
+                    self.project_id, content_json, content_hash,
+                    version, title, description, api_count
+                ))
+
+                conn.commit()
+                logger.info("Swagger数据已保存到缓存")
+
+        except Exception as e:
+            logger.error(f"保存缓存数据失败: {e}")

@@ -98,11 +98,12 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self.url_input)
 
         btn_load_url = QPushButton("加载URL")
-        btn_load_url.clicked.connect(lambda: self._load_from_url())
+        btn_load_url.clicked.connect(lambda: self._load_from_url(use_cache=True))
+        btn_load_url.setToolTip("优先从缓存加载，缓存不存在时从URL加载")
         top_layout.addWidget(btn_load_url)
 
         btn_force_refresh = QPushButton("强制刷新")
-        btn_force_refresh.clicked.connect(lambda: self._force_refresh_from_url())
+        btn_force_refresh.clicked.connect(lambda: self._load_from_url(use_cache=False))
         btn_force_refresh.setToolTip("跳过缓存，直接从URL重新加载最新文档")
         btn_force_refresh.setStyleSheet("QPushButton { color: #ff6b35; font-weight: bold; }")
         top_layout.addWidget(btn_force_refresh)
@@ -178,7 +179,7 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("文件")
-        file_menu.addAction("从URL加载", lambda: self._load_from_url())
+        file_menu.addAction("从URL加载", lambda: self._load_from_url(use_cache=True))
         file_menu.addAction("从文件加载", lambda: self._load_from_file())
         file_menu.addSeparator()
         file_menu.addAction("退出", self.close)
@@ -195,16 +196,8 @@ class MainWindow(QMainWindow):
         
         tools_menu = menu_bar.addMenu("工具")
         tools_menu.addAction("认证配置", self._show_auth_dialog)
+        tools_menu.addAction("数据库路径", self._show_database_path_dialog)
         tools_menu.addAction("清空历史", self.result_widget.clear_history)
-        
-        # 数据库管理菜单
-        database_menu = menu_bar.addMenu("数据库")
-        database_menu.addAction("数据库设置", self._show_database_settings)
-        database_menu.addAction("数据库诊断", self._show_database_diagnostics)
-        database_menu.addAction("数据恢复", self._show_data_recovery)
-        database_menu.addSeparator()
-        database_menu.addAction("数据库信息", self._show_database_info)
-        database_menu.addAction("数据库维护", self._perform_database_maintenance)
         
         # 主题菜单
         theme_menu = menu_bar.addMenu("主题")
@@ -219,48 +212,57 @@ class MainWindow(QMainWindow):
 
         # F5: 普通加载（缓存优先）
         refresh_shortcut = QShortcut(QKeySequence("F5"), self)
-        refresh_shortcut.activated.connect(lambda: self._load_from_url())
+        refresh_shortcut.activated.connect(lambda: self._load_from_url(use_cache=True))
 
         # Ctrl+F5: 强制刷新
         force_refresh_shortcut = QShortcut(QKeySequence("Ctrl+F5"), self)
-        force_refresh_shortcut.activated.connect(lambda: self._force_refresh_from_url())
+        force_refresh_shortcut.activated.connect(lambda: self._load_from_url(use_cache=False))
 
     # ------------------------- Swagger 加载 ------------------------- #
-    def _load_from_url(self, url=None):
+    def _load_from_url(self, url=None, use_cache=False):
+        """
+        从URL加载Swagger文档
+
+        Args:
+            url: Swagger文档URL
+            use_cache: 是否优先使用缓存（默认False，直接从URL加载）
+        """
         if url is None:
             url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "提示", "请输入URL")
             return
-        self.status_label.setText("正在加载 URL …")
+
+        if use_cache:
+            self.status_label.setText("正在加载（优先缓存）...")
+        else:
+            self.status_label.setText("正在从URL加载最新文档...")
+
         QApplication.processEvents()
-        if self.swagger_parser.load_from_url(url):
+
+        # 根据use_cache参数决定是否跳过缓存
+        force_refresh = not use_cache
+        if self.swagger_parser.load_from_url(url, force_refresh=force_refresh):
             self._after_doc_loaded(source_type="url", location=url)
         else:
             QMessageBox.warning(self, "错误", "加载失败，请检查网址或网络")
+
         self.status_label.setText("就绪")
 
-    def _force_refresh_from_url(self, url=None):
-        """强制刷新：跳过缓存，直接从URL加载最新文档"""
+    def _load_from_cache_first(self, url=None):
+        """缓存优先加载：优先从缓存加载，缓存不存在时从URL加载"""
         if url is None:
             url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "提示", "请输入URL")
             return
 
-        # 显示强制刷新状态
-        self.status_label.setText("🔄 强制刷新中，正在从URL获取最新文档...")
-        self.status_label.setStyleSheet("color: #ff6b35; font-weight: bold;")
-        QApplication.processEvents()
+        # 使用缓存优先的加载方式
+        self._load_from_url(url, use_cache=True)
 
-        # 强制从URL加载，跳过缓存
-        if self.swagger_parser.load_from_url(url, force_refresh=True):
-            self._after_doc_loaded(source_type="url", location=url, force_refreshed=True)
-            self.status_label.setStyleSheet("")  # 恢复默认样式
-        else:
-            QMessageBox.warning(self, "错误", "强制刷新失败，请检查网址或网络")
-            self.status_label.setStyleSheet("")  # 恢复默认样式
-            self.status_label.setText("就绪")
+    def _force_refresh_from_url(self, url=None):
+        """强制刷新：跳过缓存，直接从URL加载最新文档（保持向后兼容）"""
+        self._load_from_url(url, use_cache=False)
 
     def _load_from_file(self, file_path=None):
         if file_path is None:
@@ -425,7 +427,10 @@ class MainWindow(QMainWindow):
                 logger.info(f"已保存认证配置到项目: {current_project.name}")
             else:
                 logger.error(f"保存认证配置到项目失败: {current_project.name}")
-        
+
+
+
+
     def _on_history_selected(self, test_result):
         """
         当选择历史记录时的处理
@@ -901,27 +906,7 @@ class MainWindow(QMainWindow):
             self.db_status_label.setStyleSheet("color: orange;")
             logger.warning(f"更新数据库状态失败: {e}")
     
-    def _show_database_settings(self):
-        """显示数据库设置对话框"""
-        try:
-            from .database_settings_dialog import DatabaseSettingsDialog
-            dialog = DatabaseSettingsDialog(self.project_manager.db_manager.db_path, self)
-            if dialog.exec_() == dialog.Accepted:
-                # 如果数据库设置有变化，更新状态
-                self._update_database_status()
-        except Exception as e:
-            logger.error(f"显示数据库设置时出错: {e}")
-            QMessageBox.critical(self, "错误", f"无法打开数据库设置:\n{str(e)}")
-    
-    def _show_database_diagnostics(self):
-        """显示数据库诊断对话框"""
-        try:
-            from .database_diagnostics_dialog import DatabaseDiagnosticsDialog
-            dialog = DatabaseDiagnosticsDialog(self.project_manager.db_manager.db_path, self)
-            dialog.exec_()
-        except Exception as e:
-            logger.error(f"显示数据库诊断时出错: {e}")
-            QMessageBox.critical(self, "错误", f"无法打开数据库诊断:\n{str(e)}")
+
     
     def _show_data_recovery(self):
         """显示数据恢复对话框"""
@@ -934,57 +919,315 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"显示数据恢复时出错: {e}")
             QMessageBox.critical(self, "错误", f"无法打开数据恢复:\n{str(e)}")
-    
-    def _show_database_info(self):
-        """显示数据库信息"""
-        try:
-            db_info = self.project_manager.get_database_info()
-            
-            info_text = "数据库信息:\n\n"
-            info_text += f"数据库路径: {db_info.get('database_path', '未知')}\n"
-            info_text += f"数据库版本: {db_info.get('database_version', '未知')}\n"
-            info_text += f"存储类型: {db_info.get('storage_type', '未知')}\n"
-            info_text += f"项目总数: {db_info.get('total_projects', 0)}\n"
-            info_text += f"当前项目: {db_info.get('current_project', '无')}\n"
-            
-            if 'error' in db_info:
-                info_text += f"\n错误信息: {db_info['error']}"
-            
-            QMessageBox.information(self, "数据库信息", info_text)
-        except Exception as e:
-            logger.error(f"获取数据库信息时出错: {e}")
-            QMessageBox.critical(self, "错误", f"无法获取数据库信息:\n{str(e)}")
-    
-    def _perform_database_maintenance(self):
-        """执行数据库维护"""
-        reply = QMessageBox.question(
-            self, "数据库维护",
-            "确定要执行数据库维护吗？这可能需要几分钟时间。",
-            QMessageBox.Yes | QMessageBox.No
+
+    def _show_database_path_dialog(self):
+        """显示数据库路径设置对话框"""
+        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                     QPushButton, QMessageBox, QLineEdit, QFileDialog)
+        import os
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("数据库路径设置")
+        dialog.setFixedSize(500, 280)
+
+        # 应用主题样式
+        colors = theme_manager.get_theme_colors()
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors.get('background', '#ffffff')};
+                color: {colors.get('text', '#333333')};
+            }}
+            QLabel {{
+                color: {colors.get('text', '#333333')};
+            }}
+            QLineEdit {{
+                background-color: {colors.get('background', '#ffffff')};
+                border: 1px solid {colors.get('border', '#ddd')};
+                border-radius: 4px;
+                padding: 8px;
+                color: {colors.get('text', '#333333')};
+            }}
+            QLineEdit:focus {{
+                border-color: {colors.get('primary', '#4CAF50')};
+            }}
+            QLineEdit:read-only {{
+                background-color: {colors.get('surface', '#f5f5f5')};
+                color: {colors.get('text_secondary', '#666666')};
+            }}
+            QPushButton {{
+                background-color: {colors.get('primary', '#4CAF50')};
+                color: white;
+                border: 1px solid {colors.get('primary', '#4CAF50')};
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {colors.get('primary_hover', '#45a049')};
+                color: white;
+                border-color: {colors.get('primary_hover', '#45a049')};
+            }}
+            QPushButton:pressed {{
+                background-color: {colors.get('primary_pressed', '#3d8b40')};
+                color: white;
+                border-color: {colors.get('primary_pressed', '#3d8b40')};
+            }}
+            QCheckBox {{
+                color: {colors.get('text', '#333333')};
+                font-weight: bold;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+            }}
+            QCheckBox::indicator:unchecked {{
+                border: 2px solid {colors.get('border', '#ddd')};
+                border-radius: 3px;
+                background-color: {colors.get('background', '#ffffff')};
+            }}
+            QCheckBox::indicator:checked {{
+                border: 2px solid {colors.get('primary', '#4CAF50')};
+                border-radius: 3px;
+                background-color: {colors.get('primary', '#4CAF50')};
+            }}
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # 当前数据库路径显示
+        current_path = self.project_manager.db_manager.db_path
+        info_label = QLabel(f"当前数据库路径:")
+        info_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(info_label)
+
+        current_path_edit = QLineEdit(current_path)
+        current_path_edit.setReadOnly(True)
+        layout.addWidget(current_path_edit)
+
+        # 新路径设置
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("新数据库路径:"))
+
+        self.path_input = QLineEdit()
+        self.path_input.setText(current_path)
+
+        path_layout.addWidget(self.path_input)
+
+        browse_btn = QPushButton("浏览...")
+        browse_btn.setFixedWidth(80)
+        browse_btn.clicked.connect(self._browse_database_path)
+        path_layout.addWidget(browse_btn)
+
+        layout.addLayout(path_layout)
+
+        # 数据迁移选项
+        from PyQt5.QtWidgets import QCheckBox
+        self.migrate_data_checkbox = QCheckBox("迁移当前数据库的数据到新数据库")
+        self.migrate_data_checkbox.setChecked(True)  # 默认选中
+        layout.addWidget(self.migrate_data_checkbox)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+
+        ok_button = QPushButton("确定")
+        cancel_button = QPushButton("取消")
+
+        def apply_path():
+            new_path = self.path_input.text().strip()
+            if not new_path:
+                QMessageBox.warning(dialog, "输入错误", "请输入有效的数据库路径")
+                return
+
+            if new_path == current_path:
+                QMessageBox.information(dialog, "提示", "路径未发生变化")
+                dialog.accept()
+                return
+
+            # 确认更改
+            reply = QMessageBox.question(
+                dialog, "确认更改",
+                f"确定要将数据库路径更改为:\n{new_path}\n\n注意：更改后需要重启应用程序才能生效。",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    # 检查是否需要迁移数据
+                    migrate_data = self.migrate_data_checkbox.isChecked()
+
+                    if migrate_data:
+                        # 执行数据迁移
+                        success = self._migrate_database_data(current_path, new_path)
+                        if not success:
+                            return  # 迁移失败，不继续
+
+                    # 保存新的数据库路径到配置文件
+                    self._save_database_path_config(new_path)
+
+                    message = f"数据库路径已设置为:\n{new_path}\n\n"
+                    if migrate_data:
+                        message += "数据迁移完成！\n\n"
+                    message += "请重启应用程序使设置生效。"
+
+                    QMessageBox.information(dialog, "设置成功", message)
+                    dialog.accept()
+                except Exception as e:
+                    QMessageBox.critical(dialog, "设置失败", f"无法设置数据库路径:\n{str(e)}")
+
+        ok_button.clicked.connect(apply_path)
+        cancel_button.clicked.connect(dialog.reject)
+
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        dialog.exec_()
+
+    def _browse_database_path(self):
+        """浏览选择数据库文件"""
+        import os
+        from PyQt5.QtWidgets import QFileDialog
+
+        current_path = self.path_input.text()
+        current_dir = os.path.dirname(current_path) if current_path else os.path.expanduser("~")
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "选择数据库文件",
+            os.path.join(current_dir, "database.db"),
+            "SQLite数据库文件 (*.db);;所有文件 (*)"
         )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                self.status_label.setText("正在执行数据库维护...")
-                result = self.project_manager.perform_database_maintenance()
-                
-                if result.get('success', False):
-                    success_msg = f"数据库维护完成！\n\n"
-                    success_msg += f"成功任务: {result['successful_tasks']}\n"
-                    success_msg += f"总任务数: {result['total_tasks']}\n"
-                    success_msg += f"总耗时: {result.get('total_duration', 0):.2f}秒"
-                    
-                    QMessageBox.information(self, "维护完成", success_msg)
-                    self._update_database_status()
-                else:
-                    error_msg = result.get('error', '未知错误')
-                    QMessageBox.critical(self, "维护失败", f"数据库维护失败:\n{error_msg}")
-                
-                self.status_label.setText("就绪")
-            except Exception as e:
-                logger.error(f"数据库维护时出错: {e}")
-                QMessageBox.critical(self, "错误", f"数据库维护失败:\n{str(e)}")
-                self.status_label.setText("就绪")
+
+        if file_path:
+            self.path_input.setText(file_path)
+
+    def _save_database_path_config(self, new_path: str):
+        """保存数据库路径配置"""
+        import json
+        import os
+        from datetime import datetime
+        from core.storage_utils import get_default_storage_path
+
+        # 配置文件路径
+        config_dir = get_default_storage_path()
+        config_file = os.path.join(config_dir, "database_path.json")
+
+        # 确保配置目录存在
+        os.makedirs(config_dir, exist_ok=True)
+
+        # 保存配置
+        config_data = {
+            "database_path": os.path.abspath(new_path),
+            "updated_at": datetime.now().isoformat(),
+            "version": "1.0"
+        }
+
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"数据库路径配置已保存: {new_path}")
+
+    @staticmethod
+    def _load_database_path_config():
+        """加载数据库路径配置"""
+        import json
+        import os
+        from core.storage_utils import get_default_storage_path, get_default_database_path
+
+        try:
+            config_dir = get_default_storage_path()
+            config_file = os.path.join(config_dir, "database_path.json")
+
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                    return config_data.get("database_path")
+        except Exception as e:
+            logger.warning(f"加载数据库路径配置失败: {e}")
+
+        # 返回默认路径
+        return get_default_database_path()
+
+    def _migrate_database_data(self, source_path: str, target_path: str) -> bool:
+        """迁移数据库数据"""
+        from PyQt5.QtWidgets import QProgressDialog, QApplication, QMessageBox
+        import shutil
+        import sqlite3
+        import os
+
+        try:
+            # 检查源数据库是否存在
+            if not os.path.exists(source_path):
+                QMessageBox.warning(self, "迁移失败", f"源数据库文件不存在:\n{source_path}")
+                return False
+
+            # 检查目标路径
+            target_dir = os.path.dirname(target_path)
+            if target_dir and not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+
+            # 如果目标文件已存在，询问是否覆盖
+            if os.path.exists(target_path):
+                reply = QMessageBox.question(
+                    self, "文件已存在",
+                    f"目标数据库文件已存在:\n{target_path}\n\n是否覆盖？",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return False
+
+            # 显示进度对话框
+            progress = QProgressDialog("正在迁移数据库数据...", "取消", 0, 100, self)
+            progress.setWindowTitle("数据迁移")
+            progress.setModal(True)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+
+            # 复制数据库文件
+            progress.setLabelText("正在复制数据库文件...")
+            progress.setValue(20)
+            QApplication.processEvents()
+
+            shutil.copy2(source_path, target_path)
+
+            progress.setValue(60)
+            QApplication.processEvents()
+
+            # 验证目标数据库
+            progress.setLabelText("正在验证数据库完整性...")
+            progress.setValue(80)
+            QApplication.processEvents()
+
+            # 简单验证：尝试连接并查询
+            conn = sqlite3.connect(target_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+            conn.close()
+
+            progress.setValue(100)
+            progress.close()
+
+            logger.info(f"数据库迁移成功: {source_path} -> {target_path}")
+            logger.info(f"迁移的表数量: {len(tables)}")
+
+            return True
+
+        except Exception as e:
+            if 'progress' in locals():
+                progress.close()
+
+            logger.error(f"数据库迁移失败: {e}")
+            QMessageBox.critical(
+                self, "迁移失败",
+                f"数据库迁移失败:\n{str(e)}\n\n请检查文件权限和磁盘空间。"
+            )
+            return False
+    
+
     
     def _refresh_project_data(self):
         """刷新项目数据"""

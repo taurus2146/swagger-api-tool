@@ -44,7 +44,8 @@ class DatabaseSchema:
                 tags TEXT,  -- JSON数组格式
                 version INTEGER DEFAULT 1 CHECK (version > 0),
                 is_active BOOLEAN DEFAULT 1,
-                last_modified DATETIME DEFAULT CURRENT_TIMESTAMP
+                last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
+                swagger_data TEXT  -- JSON格式，缓存的Swagger文档数据
             )
         ''',
         
