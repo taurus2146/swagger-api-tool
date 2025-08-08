@@ -182,9 +182,21 @@ class ApiTester:
                 logger.debug(f"路径参数替换: {param_name}={param_value}, URL: {old_url} -> {full_url}")
 
             # 构建请求参数
+            query_params = request_data.get('query_params', {})
+
+            # 处理数组类型的查询参数
+            processed_params = {}
+            for key, value in query_params.items():
+                if isinstance(value, list):
+                    # 对于数组参数，requests库期望的是多个同名参数
+                    # 我们需要将其转换为适合requests的格式
+                    processed_params[key] = value
+                else:
+                    processed_params[key] = value
+
             request_kwargs = {
                 'url': full_url,
-                'params': request_data.get('query_params', {}),
+                'params': processed_params,
                 'headers': request_data.get('headers', {}),
                 'timeout': 30
             }
@@ -195,20 +207,32 @@ class ApiTester:
 
             # 支持所有可能有请求体的方法，包括DELETE
             if body_data is not None and method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-                if isinstance(body_data, dict):
+                if isinstance(body_data, (dict, list)):
+                    # 对于字典和列表，使用json参数
                     request_kwargs['json'] = body_data
                     logger.debug(f"设置JSON请求体: {body_data}")
                 elif isinstance(body_data, str) and body_data.strip():
-                    request_kwargs['data'] = body_data
-                    logger.debug(f"设置文本请求体: {body_data}")
+                    # 对于字符串，尝试解析为JSON
+                    try:
+                        import json
+                        parsed_data = json.loads(body_data)
+                        request_kwargs['json'] = parsed_data
+                        logger.debug(f"设置解析后的JSON请求体: {parsed_data}")
+                    except json.JSONDecodeError:
+                        # 如果不是有效JSON，作为普通文本处理
+                        request_kwargs['data'] = body_data
+                        logger.debug(f"设置文本请求体: {body_data}")
                 else:
                     request_kwargs['data'] = body_data
                     logger.debug(f"设置其他类型请求体: {body_data}")
 
             # 设置请求头的Content-Type
-            if method in ['POST', 'PUT', 'PATCH', 'DELETE'] and isinstance(body_data, dict):
+            if method in ['POST', 'PUT', 'PATCH', 'DELETE'] and isinstance(body_data, (dict, list)):
                 request_kwargs['headers'].setdefault('Content-Type', 'application/json')
                 logger.debug("设置Content-Type为application/json")
+            elif method in ['POST', 'PUT', 'PATCH', 'DELETE'] and 'json' in request_kwargs:
+                request_kwargs['headers'].setdefault('Content-Type', 'application/json')
+                logger.debug("设置Content-Type为application/json（JSON数据）")
             
             # 应用认证（如果需要）
             if use_auth:
@@ -441,8 +465,18 @@ class ApiTester:
         if params:
             param_strings = []
             for key, value in params.items():
-                param_strings.append(f"{key}={value}")
-            
+                # 处理数组参数
+                if isinstance(value, list):
+                    # 对于数组参数，有多种处理方式：
+                    # 1. 重复参数名：key=val1&key=val2&key=val3
+                    # 2. 逗号分隔：key=val1,val2,val3
+                    # 3. 方括号形式：key[]=val1&key[]=val2
+                    # 这里使用重复参数名的方式，这是最常见的
+                    for item in value:
+                        param_strings.append(f"{key}={item}")
+                else:
+                    param_strings.append(f"{key}={value}")
+
             if '?' in url:
                 url += '&' + '&'.join(param_strings)
             else:
