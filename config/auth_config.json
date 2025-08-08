@@ -1,16 +1,18 @@
 {
   "bearer": {
-    "login_url": "http://localhost:8080/yixun-decoration/auth/admin/sms/login",
+    "login_url": "http://localhost:8081/customer/user/login",
     "method": "POST",
     "headers": {
       "Content-Type": "application/json"
     },
     "data": {
-      "code": "123456",
-      "phone": "13800138000"
+      "loginPlatform": "PC",
+      "loginType": "password",
+      "password": "1234qwer",
+      "username": "fangm"
     },
-    "token_path": "data.token",
-    "use_prefix": true,
-    "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwicGhvbmUiOiIxMzgwMDEzODAwMCIsInR5cGUiOiJBRE1JTiIsImlhdCI6MTc1NDYyMTYzNSwiZXhwIjoxNzU0NzA4MDM1fQ.3XDHLZMGXkekpj8nhzN_-6Em2Bbghzc5fMoSWTumW08"
+    "token_path": "data",
+    "use_prefix": false,
+    "token": "3c0fda8ca4c44494bc7424a334e01153"
   }
 }

@@ -142,63 +142,97 @@ class AuthManager:
     def login(self, auth_type="bearer"):
         """
         执行登录请求获取认证token
-        
+
         Args:
             auth_type (str): 认证类型
-            
+
         Returns:
-            bool: 是否成功获取token
+            tuple: (是否成功, 详细消息)
         """
         config = self.auth_config.get(auth_type, {})
-        
+
         if not config or not config.get('login_url'):
-            logger.error(f"未找到{auth_type}类型的登录配置")
-            return False
-            
+            error_msg = f"未找到{auth_type}类型的登录配置或登录URL为空"
+            logger.error(error_msg)
+            return False, error_msg
+
         login_url = config['login_url']
         method = config.get('method', 'POST').upper()
         headers = config.get('headers', {})
         data = config.get('data', {})
-        
+
+        logger.info(f"开始登录请求: {method} {login_url}")
+        logger.debug(f"请求头: {headers}")
+        logger.debug(f"请求数据: {data}")
+
         try:
             if method == 'POST':
                 response = requests.post(login_url, json=data, headers=headers, timeout=10)
             elif method == 'GET':
                 response = requests.get(login_url, params=data, headers=headers, timeout=10)
             else:
-                logger.error(f"不支持的请求方法: {method}")
-                return False
-                
-            response.raise_for_status()
-            
+                error_msg = f"不支持的请求方法: {method}"
+                logger.error(error_msg)
+                return False, error_msg
+
+            logger.info(f"登录响应状态码: {response.status_code}")
+
+            # 检查HTTP状态码
+            if response.status_code != 200:
+                error_msg = f"登录请求失败，HTTP状态码: {response.status_code}\n响应内容: {response.text[:500]}"
+                logger.error(error_msg)
+                return False, error_msg
+
             # 解析响应获取token
-            response_data = response.json()
+            try:
+                response_data = response.json()
+                logger.debug(f"登录响应数据: {response_data}")
+            except json.JSONDecodeError as e:
+                error_msg = f"登录响应不是有效的JSON格式\n响应内容: {response.text[:500]}\n错误: {str(e)}"
+                logger.error(error_msg)
+                return False, error_msg
+
             token_path = config.get('token_path', 'token').split('.')
-            
+            logger.debug(f"Token路径: {token_path}")
+
             # 遍历token路径获取token值
             token_value = response_data
             for key in token_path:
-                if key in token_value:
+                if isinstance(token_value, dict) and key in token_value:
                     token_value = token_value[key]
                 else:
-                    logger.error(f"无法从响应中提取token，找不到路径: {key}")
-                    return False
-                    
+                    error_msg = f"无法从响应中提取token，找不到路径: {'.'.join(token_path)}\n当前路径: {key}\n响应数据结构: {list(response_data.keys()) if isinstance(response_data, dict) else type(response_data)}"
+                    logger.error(error_msg)
+                    return False, error_msg
+
+            if not token_value:
+                error_msg = f"Token值为空，路径: {'.'.join(token_path)}\n响应数据: {response_data}"
+                logger.error(error_msg)
+                return False, error_msg
+
             # 保存token
             config['token'] = token_value
             self.save_config()  # 保存token到配置
-            logger.info(f"成功获取{auth_type}认证token")
-            return True
-            
+            success_msg = f"成功获取{auth_type}认证token: {str(token_value)[:50]}..."
+            logger.info(success_msg)
+            return True, success_msg
+
+        except requests.ConnectionError as e:
+            error_msg = f"网络连接错误，无法连接到登录服务器\nURL: {login_url}\n错误: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+        except requests.Timeout as e:
+            error_msg = f"登录请求超时（10秒）\nURL: {login_url}\n错误: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
         except requests.RequestException as e:
-            logger.error(f"登录请求失败: {e}")
-            return False
-        except json.JSONDecodeError:
-            logger.error("登录响应不是有效的JSON格式")
-            return False
+            error_msg = f"登录请求失败\nURL: {login_url}\n错误: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
         except Exception as e:
-            logger.error(f"登录过程中发生错误: {e}")
-            return False
+            error_msg = f"登录过程中发生未知错误: {str(e)}\nURL: {login_url}"
+            logger.error(error_msg)
+            return False, error_msg
             
     def get_auth_headers(self, auth_type="bearer"):
         """
@@ -289,23 +323,20 @@ class AuthManager:
     def test_auth_config(self, auth_type="bearer"):
         """
         测试认证配置是否有效
-        
+
         Args:
             auth_type (str): 认证类型
-            
+
         Returns:
             tuple: (是否成功, 消息)
         """
         if auth_type not in self.auth_config:
             return False, f"未找到{auth_type}类型的认证配置"
-            
+
         # 对于bearer认证，检查是否有token
         if auth_type == 'bearer':
-            success = self.login(auth_type)
-            if success:
-                return True, "成功获取Bearer Token"
-            else:
-                return False, "Bearer Token获取失败，检查登录配置"
+            success, message = self.login(auth_type)
+            return success, message
                 
         # 对于basic认证，检查是否有用户名和密码
         elif auth_type == 'basic':
