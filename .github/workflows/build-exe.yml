@@ -28,10 +28,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
+        pip install PyQt5-tools
+        pip install auto-py-to-exe
     
     - name: Build EXE
       run: |
-        pyinstaller swagger_api_tester.spec
+        pyinstaller --onefile --windowed --name="SwaggerAPITester" --icon=assets/icon.ico --add-data="assets;assets" --add-data="config;config" --collect-all PyQt5 --collect-all requests --collect-all yaml --collect-all jsonschema main.py
     
     - name: Upload EXE artifact
       uses: actions/upload-artifact@v4
