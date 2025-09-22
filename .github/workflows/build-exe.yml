@@ -26,12 +26,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-build.txt
         pip install pyinstaller
-        pip install PyQt5-tools
-        pip install auto-py-to-exe
-        pip install --force-reinstall PyYAML==6.0
         python -c "import yaml; print('yaml imported successfully')"
+        python -c "import faker; print('faker imported successfully')"
+        python -c "import PyQt5; print('PyQt5 imported successfully')"
     
     - name: Build EXE
       run: |
