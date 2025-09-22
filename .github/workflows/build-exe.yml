@@ -31,7 +31,7 @@ jobs:
     
     - name: Build EXE
       run: |
-        pyinstaller --onefile --windowed --name="SwaggerAPITester" --icon=assets/icon.ico main.py
+        pyinstaller swagger_api_tester.spec
     
     - name: Upload EXE artifact
       uses: actions/upload-artifact@v4
