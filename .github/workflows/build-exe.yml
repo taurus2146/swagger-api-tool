@@ -7,6 +7,10 @@ on:
     branches: [ master, main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -37,27 +41,26 @@ jobs:
     
     - name: Create Release
       if: github.ref == 'refs/heads/master'
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ github.run_number }}
         name: Release v${{ github.run_number }}
         body: |
           自动构建的Swagger API测试工具
-          
+
           ## 更新内容
           - 优化对象参数拆分和认证配置功能
           - 修复GET请求中对象参数第一次加载时不拆分的问题
           - 去掉对象参数的分组标题和空行，界面更简洁
           - 增强认证配置功能，支持自定义Token前缀
           - 优化登录测试体验，添加异步处理和进度提示
-          
+
           ## 使用方法
           1. 下载 SwaggerAPITester.exe
           2. 双击运行即可使用
-          
+
         files: |
           dist/SwaggerAPITester.exe
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
