@@ -705,6 +705,17 @@ class DataGenerator:
         # OpenAPI 3.0: 参数有schema对象
         if 'schema' in param:
             schema = param['schema'].copy()
+
+            # 如果schema包含$ref引用，解析引用
+            if '$ref' in schema:
+                try:
+                    resolved_schema = self._resolve_reference(schema['$ref'])
+                    if resolved_schema:
+                        schema = resolved_schema.copy()
+                        print(f"DEBUG: 参数 {param.get('name', '')} 的$ref引用已解析，包含properties: {list(schema.get('properties', {}).keys())}")
+                except Exception as e:
+                    print(f"DEBUG: 解析参数 {param.get('name', '')} 的$ref引用失败: {e}")
+
             # 将参数的name和description添加到schema中，便于生成更合理的数据
             schema['name'] = param.get('name', '')
             schema['description'] = param.get('description', '')

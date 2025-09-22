@@ -34,7 +34,8 @@ class AuthManager:
                 'headers': {},
                 'data': {},
                 'token_path': 'token',
-                'use_prefix': True  # 是否使用 "Bearer " 前缀
+                'use_prefix': False,  # 默认不使用前缀
+                'custom_prefix': 'Bearer '  # 默认前缀值
             }
         }
         
@@ -158,11 +159,24 @@ class AuthManager:
 
         login_url = config['login_url']
         method = config.get('method', 'POST').upper()
-        headers = config.get('headers', {})
+
+        # 获取Bearer Token配置中的基础headers
+        base_headers = config.get('headers', {})
+
+        # 获取自定义请求头
+        custom_headers = self.auth_config.get('custom_headers', {})
+
+        # 合并所有请求头
+        headers = {}
+        headers.update(base_headers)  # 先添加基础headers
+        headers.update(custom_headers)  # 再添加自定义headers（会覆盖同名的基础headers）
+
         data = config.get('data', {})
 
         logger.info(f"开始登录请求: {method} {login_url}")
-        logger.debug(f"请求头: {headers}")
+        logger.debug(f"基础请求头: {base_headers}")
+        logger.debug(f"自定义请求头: {custom_headers}")
+        logger.debug(f"合并后请求头: {headers}")
         logger.debug(f"请求数据: {data}")
 
         try:
@@ -253,11 +267,14 @@ class AuthManager:
         if auth_type == 'bearer':
             # 直接从配置获取token
             token = config.get('token', '')
-            use_prefix = config.get('use_prefix', True)
-            
+            use_prefix = config.get('use_prefix', False)  # 默认不使用前缀
+            custom_prefix = config.get('custom_prefix', 'Bearer ')  # 默认前缀
+
             if token:
                 if use_prefix:
-                    return {"Authorization": f"Bearer {token}"}
+                    # 确保前缀以空格结尾（如果用户没有添加的话）
+                    prefix = custom_prefix if custom_prefix.endswith(' ') else custom_prefix + ' '
+                    return {"Authorization": f"{prefix}{token}"}
                 else:
                     return {"Authorization": token}
             return {}
@@ -279,7 +296,30 @@ class AuthManager:
                 return {}
                 
         return {}
-        
+
+    def get_all_headers(self, auth_type="bearer"):
+        """
+        获取所有请求头（包括认证头和自定义请求头）
+
+        Args:
+            auth_type (str): 认证类型
+
+        Returns:
+            dict: 所有请求头信息
+        """
+        headers = {}
+
+        # 获取认证头
+        auth_headers = self.get_auth_headers(auth_type)
+        headers.update(auth_headers)
+
+        # 获取自定义请求头
+        custom_headers_config = self.auth_config.get('custom_headers', {})
+        if 'headers' in custom_headers_config:
+            headers.update(custom_headers_config['headers'])
+
+        return headers
+
     def apply_auth(self, request_kwargs, auth_type="bearer"):
         """
         将认证信息应用到请求参数中
@@ -299,12 +339,12 @@ class AuthManager:
         # 复制请求参数，避免修改原始参数
         kwargs = request_kwargs.copy()
         
-        # 获取认证头信息
-        auth_headers = self.get_auth_headers(auth_type)
-        
+        # 获取所有头信息（认证头 + 自定义请求头）
+        all_headers = self.get_all_headers(auth_type)
+
         # 合并头信息
         headers = kwargs.get('headers', {})
-        headers.update(auth_headers)
+        headers.update(all_headers)
         kwargs['headers'] = headers
         
         # 如果是API key且在query中
@@ -408,7 +448,8 @@ class AuthManager:
         # Bearer Token配置
         self.auth_config['bearer'] = {
             'token': 'demo-bearer-token-123456',
-            'use_prefix': True  # 默认使用 "Bearer " 前缀
+            'use_prefix': False,  # 默认不使用前缀
+            'custom_prefix': 'Bearer '  # 默认前缀值
         }
         
         # Basic认证配置

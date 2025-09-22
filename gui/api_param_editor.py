@@ -381,6 +381,9 @@ class ApiParamEditor(QWidget):
             'body': None,
             'query_checkboxes': {}  # 添加查询参数勾选框字典
         }
+
+        # 重置对象参数映射
+        self.object_param_mapping = {}
         
     def generate_param_widgets(self):
         """
@@ -388,6 +391,13 @@ class ApiParamEditor(QWidget):
         """
         if not self.api_info or not self.data_generator:
             return
+
+        # 确保数据生成器有正确的swagger_data
+        if not self.data_generator.swagger_data and self.swagger_parser:
+            print("DEBUG: 数据生成器缺少swagger_data，从swagger_parser获取")
+            if hasattr(self.swagger_parser, 'swagger_data') and self.swagger_parser.swagger_data:
+                self.data_generator.swagger_data = self.swagger_parser.swagger_data
+                print("DEBUG: 已从swagger_parser设置swagger_data到数据生成器")
             
         parameters = self.api_info.get('parameters', [])
         request_body = self.api_info.get('requestBody', {})
@@ -640,12 +650,39 @@ class ApiParamEditor(QWidget):
                 widget.setText("[]")
             widget.setMaximumHeight(80)
         elif param_type == 'object':
-            widget = QTextEdit()
-            if isinstance(value, dict):
-                widget.setText(json.dumps(value, ensure_ascii=False, indent=2))
+            # 对于对象类型，检查是否有properties定义
+            properties = param_schema.get('properties', {})
+            print(f"DEBUG: 对象参数 {param_name}, schema: {param_schema}")
+            print(f"DEBUG: properties: {properties}")
+
+            # 如果没有直接的properties，检查是否有$ref引用
+            if not properties and '$ref' in param_schema:
+                print(f"DEBUG: 发现$ref引用: {param_schema['$ref']}")
+                # 尝试解析引用
+                if self.data_generator and hasattr(self.data_generator, '_resolve_reference'):
+                    try:
+                        resolved_schema = self.data_generator._resolve_reference(param_schema['$ref'])
+                        if resolved_schema and 'properties' in resolved_schema:
+                            properties = resolved_schema['properties']
+                            param_schema = resolved_schema  # 更新schema
+                            print(f"DEBUG: 解析引用成功，properties: {list(properties.keys())}")
+                    except Exception as e:
+                        print(f"DEBUG: 解析引用失败: {e}")
+
+            if properties:
+                # 如果有properties，拆分成独立的字段
+                print(f"DEBUG: 拆分对象参数 {param_name}，包含 {len(properties)} 个属性")
+                self._add_object_properties(layout, param_in, param_name, param_schema, required, description, value, checkbox)
+                return  # 提前返回，不添加到param_widgets
             else:
-                widget.setText("{}")
-            widget.setMaximumHeight(100)
+                # 如果没有properties定义，使用JSON编辑器
+                print(f"DEBUG: 对象参数 {param_name} 没有properties，使用JSON编辑器")
+                widget = QTextEdit()
+                if isinstance(value, dict):
+                    widget.setText(json.dumps(value, ensure_ascii=False, indent=2))
+                else:
+                    widget.setText("{}")
+                widget.setMaximumHeight(100)
         else:  # 默认为字符串
             if 'enum' in param_schema:
                 widget = QComboBox()
@@ -673,10 +710,119 @@ class ApiParamEditor(QWidget):
             layout.addRow(label, widget)
         
         # 保存控件引用
-        if param_in in self.param_widgets:
-            self.param_widgets[param_in][param_name] = widget
-            
-            
+        if param_in not in self.param_widgets:
+            self.param_widgets[param_in] = {}
+        self.param_widgets[param_in][param_name] = widget
+
+    def _add_object_properties(self, layout, param_in, param_name, param_schema, required, description, value, checkbox):
+        """
+        为对象类型参数添加拆分的属性字段
+
+        Args:
+            layout (QFormLayout): 要添加到的布局
+            param_in (str): 参数位置
+            param_name (str): 参数名称
+            param_schema (dict): 参数架构
+            required (bool): 是否必需
+            description (str): 参数描述
+            value: 参数值
+            checkbox: 查询参数的勾选框
+        """
+        properties = param_schema.get('properties', {})
+        required_props = param_schema.get('required', [])
+
+        # 如果value是字典，从中提取各属性的值
+        prop_values = {}
+        if isinstance(value, dict):
+            prop_values = value
+
+        # 不再显示对象分组标题，直接显示属性字段
+
+        # 对象参数不再需要单独的勾选框容器，直接显示属性字段
+
+        # 为每个属性创建字段
+        for prop_name, prop_schema in properties.items():
+            prop_required = prop_name in required_props
+            prop_description = prop_schema.get('description', '')
+            prop_value = prop_values.get(prop_name)
+
+            # 生成属性的默认值
+            if prop_value is None and self.data_generator:
+                try:
+                    prop_value = self.data_generator.generate_data(prop_schema)
+                except Exception as e:
+                    print(f"生成属性 {prop_name} 默认值失败: {e}")
+                    prop_value = self._get_default_value_by_type(prop_schema.get('type', 'string'))
+
+            # 直接使用属性名，不加对象前缀
+            # full_param_name = f"{param_name}.{prop_name}"
+
+            # 记录对象参数映射关系
+            if param_in not in self.object_param_mapping:
+                self.object_param_mapping[param_in] = {}
+            self.object_param_mapping[param_in][prop_name] = param_name
+
+            # 递归调用add_param_widget来创建属性控件
+            self.add_param_widget(layout, param_in, prop_name, prop_schema,
+                                prop_required, prop_description, prop_value)
+
+    def _get_default_value_by_type(self, param_type):
+        """
+        根据参数类型获取默认值
+
+        Args:
+            param_type (str): 参数类型
+
+        Returns:
+            any: 默认值
+        """
+        if param_type == 'boolean':
+            return False
+        elif param_type == 'integer':
+            return 0
+        elif param_type == 'number':
+            return 0.0
+        elif param_type == 'array':
+            return []
+        elif param_type == 'object':
+            return {}
+        else:  # string
+            return ""
+
+    def _reconstruct_object_params(self, raw_params, param_type='query'):
+        """
+        重组对象参数，将拆分的属性重新组合成对象
+
+        Args:
+            raw_params (dict): 原始参数字典
+            param_type (str): 参数类型 ('query', 'path', 'header')
+
+        Returns:
+            dict: 重组后的参数字典
+        """
+        result = {}
+        object_params = {}
+
+        # 获取该参数类型的对象映射
+        param_mapping = self.object_param_mapping.get(param_type, {})
+
+        for param_name, value in raw_params.items():
+            if param_name in param_mapping:
+                # 这是对象的属性
+                object_name = param_mapping[param_name]
+                if object_name not in object_params:
+                    object_params[object_name] = {}
+                object_params[object_name][param_name] = value
+            else:
+                # 这是普通参数
+                result[param_name] = value
+
+        # 将对象参数添加到结果中
+        for object_name, object_value in object_params.items():
+            result[object_name] = object_value
+
+        return result
+
     def regenerate_test_data(self):
         """
         重新生成测试数据
@@ -705,21 +851,30 @@ class ApiParamEditor(QWidget):
         }
 
         # 获取路径参数
+        raw_path_params = {}
         for param_name, widget in self.param_widgets.get('path', {}).items():
-            result['path_params'][param_name] = self.get_widget_value(widget)
+            raw_path_params[param_name] = self.get_widget_value(widget)
+
+        # 重组对象参数
+        result['path_params'] = self._reconstruct_object_params(raw_path_params, 'path')
 
         # 获取查询参数（只获取勾选的参数）
         query_checkboxes = self.param_widgets.get('query_checkboxes', {})
+        raw_query_params = {}
+
         for param_name, widget in self.param_widgets.get('query', {}).items():
             # 检查是否有对应的勾选框
             if param_name in query_checkboxes:
                 checkbox = query_checkboxes[param_name]
                 # 只有勾选的参数才包含在结果中
                 if checkbox.isChecked():
-                    result['query_params'][param_name] = self.get_widget_value(widget)
+                    raw_query_params[param_name] = self.get_widget_value(widget)
             else:
                 # 没有勾选框的参数直接包含
-                result['query_params'][param_name] = self.get_widget_value(widget)
+                raw_query_params[param_name] = self.get_widget_value(widget)
+
+        # 重组对象参数
+        result['query_params'] = self._reconstruct_object_params(raw_query_params, 'query')
 
         # 获取自定义请求头
         result['headers'] = self.get_custom_headers()
