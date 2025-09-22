@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-构建exe文件的脚本
+Build script for exe file
 """
 
 import os
@@ -11,15 +11,15 @@ import subprocess
 import shutil
 
 def build_exe():
-    """构建exe文件"""
-    
-    # 清理之前的构建文件
+    """Build exe file"""
+
+    # Clean previous build files
     if os.path.exists('build'):
         shutil.rmtree('build')
     if os.path.exists('dist'):
         shutil.rmtree('dist')
     
-    # PyInstaller命令
+    # PyInstaller command
     cmd = [
         'pyinstaller',
         '--onefile',
@@ -29,7 +29,7 @@ def build_exe():
         '--add-data=assets;assets',
         '--add-data=config;config',
         
-        # 强制包含所有必要模块
+        # Force include all necessary modules
         '--collect-all=PyQt5',
         '--collect-all=requests',
         '--collect-all=PyYAML',
@@ -40,7 +40,7 @@ def build_exe():
         '--collect-all=faker',
         '--collect-all=cryptography',
         
-        # 隐藏导入
+        # Hidden imports
         '--hidden-import=yaml',
         '--hidden-import=PyYAML',
         '--hidden-import=yaml.loader',
@@ -77,7 +77,7 @@ def build_exe():
         '--hidden-import=re',
         '--hidden-import=traceback',
         
-        # 项目模块
+        # Project modules
         '--hidden-import=gui',
         '--hidden-import=gui.main_window',
         '--hidden-import=gui.api_param_editor',
@@ -97,26 +97,26 @@ def build_exe():
         'main.py'
     ]
     
-    print("开始构建exe文件...")
-    print("命令:", ' '.join(cmd))
-    
+    print("Starting to build exe file...")
+    print("Command:", ' '.join(cmd))
+
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("构建成功!")
-        print("输出:", result.stdout)
-        
-        # 检查生成的文件
+        print("Build successful!")
+        print("Output:", result.stdout)
+
+        # Check generated file
         exe_path = os.path.join('dist', 'SwaggerAPITester.exe')
         if os.path.exists(exe_path):
             size = os.path.getsize(exe_path)
-            print(f"生成的exe文件: {exe_path}")
-            print(f"文件大小: {size / 1024 / 1024:.2f} MB")
+            print(f"Generated exe file: {exe_path}")
+            print(f"File size: {size / 1024 / 1024:.2f} MB")
         else:
-            print("警告: 未找到生成的exe文件")
-            
+            print("Warning: Generated exe file not found")
+
     except subprocess.CalledProcessError as e:
-        print("构建失败!")
-        print("错误:", e.stderr)
+        print("Build failed!")
+        print("Error:", e.stderr)
         sys.exit(1)
 
 if __name__ == '__main__':
