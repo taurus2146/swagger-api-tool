@@ -15,7 +15,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
     
@@ -30,7 +30,7 @@ jobs:
         pyinstaller --onefile --windowed --name="SwaggerAPITester" --icon=assets/icon.ico main.py
     
     - name: Upload EXE artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SwaggerAPITester-exe
         path: dist/SwaggerAPITester.exe
