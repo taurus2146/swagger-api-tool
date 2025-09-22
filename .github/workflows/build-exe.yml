@@ -30,6 +30,8 @@ jobs:
         pip install pyinstaller
         pip install PyQt5-tools
         pip install auto-py-to-exe
+        pip install --force-reinstall PyYAML==6.0
+        python -c "import yaml; print('yaml imported successfully')"
     
     - name: Build EXE
       run: |

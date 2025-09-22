@@ -28,17 +28,21 @@ def build_exe():
         '--icon=assets/icon.ico',
         '--add-data=assets;assets',
         '--add-data=config;config',
+        '--additional-hooks-dir=.',
         
         # Force include all necessary modules
         '--collect-all=PyQt5',
         '--collect-all=requests',
         '--collect-all=PyYAML',
+        '--collect-all=yaml',
         '--collect-all=jsonschema',
         '--collect-all=swagger_parser',
         '--collect-all=python_dateutil',
         '--collect-all=urllib3',
         '--collect-all=faker',
         '--collect-all=cryptography',
+        '--collect-submodules=PyYAML',
+        '--collect-submodules=yaml',
         
         # Hidden imports
         '--hidden-import=yaml',
